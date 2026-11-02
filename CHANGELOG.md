@@ -4,6 +4,36 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-11-02
+
+A metadata release: the market listing now describes the plugin that exists. The bundle,
+the credential card and the MCP row are unchanged from 0.6.1.
+
+### Fixed
+
+- `market/listing.json` said the proxy switch "writes that block into `~/.dsh/.env` for the
+  next launch". That was 0.6.0's behaviour and has not been true since 0.6.1, which routes
+  only the Stitch origin inside the running process and writes no proxy variable at all. The
+  long description now states what the switch does, what the harness does when it is off,
+  and that a 0.6.0 block left in `.env` is deleted on activation.
+- The long description stored its line breaks as literal `\n` two-character sequences
+  instead of newlines, so a storefront rendering it showed `\n` in the prose instead of
+  paragraphs.
+- The same paragraph called the credentials service "write-only, never read back". The card
+  is write-only — it only reports whether a value is configured — but the Host half does
+  resolve the stored value, into `config.json` (mode 0600), to build the request header. The
+  wording now says which half does what.
+
+### Added
+
+- `category` (`tools`) in `market/listing.json`: the plugin adds a tool surface to the agent,
+  it does not change the harness UI.
+
+### Changed
+
+- Version metadata in `package.json` and `market/listing.json` is 0.6.2. No runtime file
+  differs from 0.6.1.
+
 ## [0.6.1] - 2026-11-02
 
 The card's proxy switch now routes the traffic it was always meant to route: this
@@ -146,6 +176,7 @@ became an option instead of a requirement.
   host `credentials` service.
 - Display metadata (locale title/description, icon).
 
+[0.6.2]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.4.6...v0.5.0
