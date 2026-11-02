@@ -99,6 +99,18 @@ window.__ModuleLoader__.load({
         refresh();
       }, [refresh]);
 
+      // The owner renders this entry twice: a one-liner in list rows (`summary`)
+      // and the full form on the bundle page (`page`). Never put the form in a row.
+      if (props.view === 'summary') {
+        return h(
+          'span',
+          { 'data-stitch-auth-summary': true },
+          state.key || state.token
+            ? '凭据已配置' + (state.key ? ' · API Key' : '') + (state.token ? ' · OAuth' : '')
+            : '未配置凭据',
+        );
+      }
+
       const store = (ref, value, label) => {
         if (!creds || typeof creds.set !== 'function') {
           setMsg({ kind: 'err', text: '当前构建没有暴露 credentials 服务，无法保存。' });
@@ -312,8 +324,8 @@ window.__ModuleLoader__.load({
       apply(ctx) {
         const remote = ctx.remote;
         ctx.slots.inject('plugins.bundle.config', () =>
-          ctx.slots.register({ name: 'plugins.bundle.config', key: NS, locale: NS }, () =>
-            h(AuthCard, { remote }),
+          ctx.slots.register({ name: 'plugins.bundle.config', key: NS, locale: NS }, (props) =>
+            h(AuthCard, { remote, view: props && props.view }),
           ),
         );
       },
