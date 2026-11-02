@@ -7,7 +7,8 @@
 # so it is launched with the Host's own interpreter (process.execPath) under
 # ELECTRON_RUN_AS_NODE. See README.md for prerequisites and alternatives.
 - insert:
-    # Bundle's own Host entry; it mounts the Client half (the auth guide card).
+    # Bundle's own Host entry; it publishes stored credentials into process.env
+    # and mounts the Client half (the credential card).
     - id: dsh-stitch-mcp
       name: 'dsh-stitch-mcp'
       config: {}
@@ -21,15 +22,21 @@
           - !!js "typeof dshHomePath === 'function' ? dshHomePath('dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/mcp.js') : process.env.DSH_PROFILE_DIR + '/../../dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/mcp.js'"
         env:
           ELECTRON_RUN_AS_NODE: '1'
+          # Node's built-in fetch (undici) ignores HTTPS_PROXY unless this is set.
+          # Without it the CLI child cannot reach stitch.googleapis.com and every
+          # mcp__stitch__* call fails with UND_ERR_CONNECT_TIMEOUT.
+          NODE_USE_ENV_PROXY: '1'
           # The bridge scrubs names matching KEY/PASSWORD/SECRET/TOKEN out of the
           # ambient environment, so Stitch credentials must be forwarded here.
+          # The Host half writes the stored values into process.env first.
           STITCH_API_KEY: !!js "process.env.STITCH_API_KEY || ''"
           STITCH_ACCESS_TOKEN: !!js "process.env.STITCH_ACCESS_TOKEN || ''"
           STITCH_PROJECT_ID: !!js "process.env.STITCH_PROJECT_ID || ''"
           STITCH_BASE_URL: !!js "process.env.STITCH_BASE_URL || ''"
-          # Google endpoints may require an outbound proxy on this network.
+          # Outbound proxy: taken from the environment or configured in the card.
           HTTPS_PROXY: !!js "process.env.HTTPS_PROXY || ''"
           HTTP_PROXY: !!js "process.env.HTTP_PROXY || ''"
+          NO_PROXY: !!js "process.env.NO_PROXY || ''"
         # Keep the harness healthy when the CLI or its runtime is missing; the
         # failure is logged instead of rejecting plugin activation.
         failOnStartupError: false

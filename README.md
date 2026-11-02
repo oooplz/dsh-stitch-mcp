@@ -74,6 +74,17 @@ so the MCP child is respawned with the new credentials.
 | Covers | Canvas resources: projects, screens, design systems | workspaces, priorities, insights, solutions |
 | Best for | automation, unattended machines | interactive use |
 
+### Outbound proxy
+
+If `stitch.googleapis.com` is only reachable through a proxy, open the card's **Proxy** tab
+and save the proxy URL (for example `http://127.0.0.1:7897`). The Host half writes it into
+`process.env.HTTPS_PROXY`/`HTTP_PROXY`, and the patch row sets **`NODE_USE_ENV_PROXY=1`**.
+
+That last variable is required: Node's built-in `fetch` (undici) ignores `HTTPS_PROXY`
+unless it is set, and without it every `mcp__stitch__*` call fails with
+`UND_ERR_CONNECT_TIMEOUT` even though `curl` works. A value in `HTTPS_PROXY` in the
+harness environment is used when the card has none.
+
 ```bash
 # OAuth via CLI (stores and refreshes tokens locally)
 node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login

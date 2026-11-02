@@ -7,6 +7,7 @@ window.__ModuleLoader__.load({
     const NS = 'dsh-stitch-mcp';
     const REF_KEY = 'STITCH_API_KEY';
     const REF_TOKEN = 'STITCH_ACCESS_TOKEN';
+    const REF_PROXY = 'STITCH_HTTPS_PROXY';
     const SETTINGS_URL = 'https://stitch.withgoogle.com/settings';
     const LOGIN_COMMAND =
       'node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login';
@@ -17,10 +18,13 @@ window.__ModuleLoader__.load({
       en: {
         apiKeyTab: 'API Key',
         oauthTab: 'OAuth',
+        proxyTab: 'Proxy',
         pasteKey: 'Paste Google Stitch API Key',
         pasteToken: 'Paste Google Stitch AccessToken',
+        pasteProxy: 'http://127.0.0.1:7897',
         replaceKey: 'Replace Google Stitch API Key',
         replaceToken: 'Replace Google Stitch AccessToken',
+        replaceProxy: 'Replace proxy URL',
         createKey: 'Create API Key',
         copyCommand: 'Copy login command',
         openSettings: 'Open settings',
@@ -45,10 +49,13 @@ window.__ModuleLoader__.load({
       zh: {
         apiKeyTab: 'API Key',
         oauthTab: 'OAuth',
+        proxyTab: '代理',
         pasteKey: '粘贴 Google Stitch API Key',
         pasteToken: '粘贴 Google Stitch AccessToken',
+        pasteProxy: 'http://127.0.0.1:7897',
         replaceKey: '替换 Google Stitch API Key',
         replaceToken: '替换 Google Stitch AccessToken',
+        replaceProxy: '替换代理地址',
         createKey: '创建 API Key',
         copyCommand: '复制登录命令',
         openSettings: '打开设置页',
@@ -183,21 +190,21 @@ window.__ModuleLoader__.load({
       const creds = props.creds;
       const t = props.t;
       const [tab, setTab] = React.useState('key');
-      const [keyValue, setKeyValue] = React.useState('');
-      const [tokenValue, setTokenValue] = React.useState('');
-      const [state, setState] = React.useState({ key: false, token: false });
+      const [values, setValues] = React.useState({ key: '', token: '', proxy: '' });
+      const [state, setState] = React.useState({ key: false, token: false, proxy: false });
       const [busy, setBusy] = React.useState(null);
       const [msg, setMsg] = React.useState(null);
 
       const describe = () => {
         if (!creds || typeof creds.describe !== 'function') return;
-        creds.describe([REF_KEY, REF_TOKEN]).then(
+        creds.describe([REF_KEY, REF_TOKEN, REF_PROXY]).then(
           (res) => {
             if (!res || res.ok !== true) return;
             const v = res.value || {};
             setState({
               key: Boolean(v[REF_KEY] && v[REF_KEY].configured === true),
               token: Boolean(v[REF_TOKEN] && v[REF_TOKEN].configured === true),
+              proxy: Boolean(v[REF_PROXY] && v[REF_PROXY].configured === true),
             });
           },
           () => {},
@@ -209,7 +216,7 @@ window.__ModuleLoader__.load({
         return undefined;
       }, [creds]);
 
-      const save = (ref, value, reset) => {
+      const save = (ref, slot, value) => {
         if (!creds || typeof creds.set !== 'function') {
           setMsg({ kind: 'err', text: t.noService });
           return;
@@ -225,7 +232,7 @@ window.__ModuleLoader__.load({
             setBusy(null);
             if (res && res.ok === true) {
               setMsg({ kind: 'ok', text: t.saved });
-              reset('');
+              setValues((prev) => ({ ...prev, [slot]: '' }));
               describe();
             } else {
               setMsg({ kind: 'err', text: (res && res.error && res.error.message) || t.saveFailed });
@@ -238,7 +245,7 @@ window.__ModuleLoader__.load({
         );
       };
 
-      const clear = (ref) => {
+      const clear = (ref, slot) => {
         if (!creds || typeof creds.unset !== 'function') return;
         setBusy(ref);
         creds.unset(ref).then(
@@ -246,10 +253,7 @@ window.__ModuleLoader__.load({
             setBusy(null);
             if (res && res.ok === true) {
               setMsg({ kind: 'ok', text: t.cleared });
-              setState((prev) => ({
-                key: ref === REF_KEY ? false : prev.key,
-                token: ref === REF_TOKEN ? false : prev.token,
-              }));
+              setState((prev) => ({ ...prev, [slot]: false }));
             } else {
               setMsg({ kind: 'err', text: (res && res.error && res.error.message) || t.clearFailed });
             }
@@ -285,11 +289,18 @@ window.__ModuleLoader__.load({
         }
       };
 
-      const isKey = tab === 'key';
-      const ref = isKey ? REF_KEY : REF_TOKEN;
-      const value = isKey ? keyValue : tokenValue;
-      const setValue = isKey ? setKeyValue : setTokenValue;
-      const configured = isKey ? state.key : state.token;
+      const TABS = [
+        { id: 'key', label: t.apiKeyTab, ref: REF_KEY },
+        { id: 'oauth', label: t.oauthTab, ref: REF_TOKEN },
+        { id: 'proxy', label: t.proxyTab, ref: REF_PROXY },
+      ];
+      const current = TABS.find((x) => x.id === tab) || TABS[0];
+      const value = values[current.id];
+      const configured = state[current.id];
+
+      const placeholder = configured
+        ? { key: t.replaceKey, oauth: t.replaceToken, proxy: t.replaceProxy }[current.id]
+        : { key: t.pasteKey, oauth: t.pasteToken, proxy: t.pasteProxy }[current.id];
 
       return h(
         'div',
@@ -300,33 +311,22 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { style: s.tabs, role: 'tablist' },
-            h(
-              'button',
-              {
-                type: 'button',
-                role: 'tab',
-                'aria-selected': isKey,
-                style: s.tab(isKey),
-                onClick: () => {
-                  setTab('key');
-                  setMsg(null);
+            TABS.map((item) =>
+              h(
+                'button',
+                {
+                  key: item.id,
+                  type: 'button',
+                  role: 'tab',
+                  'aria-selected': tab === item.id,
+                  style: s.tab(tab === item.id),
+                  onClick: () => {
+                    setTab(item.id);
+                    setMsg(null);
+                  },
                 },
-              },
-              t.apiKeyTab,
-            ),
-            h(
-              'button',
-              {
-                type: 'button',
-                role: 'tab',
-                'aria-selected': !isKey,
-                style: s.tab(!isKey),
-                onClick: () => {
-                  setTab('oauth');
-                  setMsg(null);
-                },
-              },
-              t.oauthTab,
+                item.label,
+              ),
             ),
           ),
           h(
@@ -340,45 +340,55 @@ window.__ModuleLoader__.load({
           'div',
           { style: s.row },
           h('input', {
-            type: 'password',
+            type: current.id === 'proxy' ? 'text' : 'password',
             autoComplete: 'off',
             spellCheck: false,
-            'aria-label': isKey ? t.apiKeyTab : t.oauthTab,
-            placeholder: configured
-              ? isKey
-                ? t.replaceKey
-                : t.replaceToken
-              : isKey
-                ? t.pasteKey
-                : t.pasteToken,
+            'aria-label': current.label,
+            placeholder,
             value,
-            onChange: (e) => setValue(e.target.value),
+            onChange: (e) => setValues((prev) => ({ ...prev, [current.id]: e.target.value })),
             onKeyDown: (e) => {
-              if (e.key === 'Enter') save(ref, value, setValue);
+              if (e.key === 'Enter') save(current.ref, current.id, value);
             },
             style: s.input,
           }),
           h(
             'button',
-            { type: 'button', disabled: busy === ref, onClick: () => save(ref, value, setValue), style: s.btn(true) },
-            busy === ref ? t.saving : t.save,
+            {
+              type: 'button',
+              disabled: busy === current.ref,
+              onClick: () => save(current.ref, current.id, value),
+              style: s.btn(true),
+            },
+            busy === current.ref ? t.saving : t.save,
           ),
           configured
-            ? h('button', { type: 'button', disabled: busy === ref, onClick: () => clear(ref), style: s.btn(false) }, t.clear)
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  disabled: busy === current.ref,
+                  onClick: () => clear(current.ref, current.id),
+                  style: s.btn(false),
+                },
+                t.clear,
+              )
             : null,
         ),
         h(
           'div',
           { style: s.actions },
-          isKey
+          current.id === 'key'
             ? h('button', { type: 'button', onClick: open, style: s.link }, t.createKey + ' \u2197')
-            : h(
-                React.Fragment,
-                null,
-                h('button', { type: 'button', onClick: copyCommand, style: s.link }, t.copyCommand),
-                h('span', { style: { fontSize: 12, opacity: 0.25 } }, '\u00b7'),
-                h('button', { type: 'button', onClick: open, style: s.link }, t.openSettings),
-              ),
+            : current.id === 'oauth'
+              ? h(
+                  React.Fragment,
+                  null,
+                  h('button', { type: 'button', onClick: copyCommand, style: s.link }, t.copyCommand),
+                  h('span', { style: { fontSize: 12, opacity: 0.25 } }, '\u00b7'),
+                  h('button', { type: 'button', onClick: open, style: s.link }, t.openSettings),
+                )
+              : null,
         ),
         msg ? h('div', { style: msg.kind === 'ok' ? s.ok : s.err }, msg.text) : null,
         h('div', { style: s.foot }, t.restart),
