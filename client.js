@@ -311,19 +311,25 @@ window.__ModuleLoader__.load({
       );
     }
 
-    // A detail-page section only renders while that page is open, and the owner
-    // renders every registered section unconditionally — so this is the reliable
-    // place for the card. `plugins.bundle.config` is only dispatched when the host
-    // holds a configuration form for the bundle, which this bundle has none of.
+    // A detail-page section renders only while that page is open, and the owner
+    // renders every registered section on every subject. The card is gated on the
+    // subject's package name; the fallback line is a temporary probe that reports
+    // the real subject shape so a mismatch can be diagnosed without DevTools.
     function StitchDetailSection(props) {
       const subject = props && props.subject;
       const pkgName = subject && subject.pkg && subject.pkg.name;
-      if (pkgName !== NS) return null;
+      if (typeof pkgName === 'string' && pkgName.indexOf('stitch') >= 0) {
+        return h(
+          'section',
+          { 'data-stitch-credentials-section': true, style: { marginTop: 8 } },
+          h('div', { style: { fontWeight: 600, fontSize: 13, marginBottom: 8 } }, 'Stitch 凭据'),
+          h(AuthCard, { remote: props && props.remote, view: 'page' }),
+        );
+      }
       return h(
-        'section',
-        { 'data-stitch-credentials-section': true, style: { marginTop: 8 } },
-        h('div', { style: { fontWeight: 600, fontSize: 13, marginBottom: 8 } }, 'Stitch 凭据'),
-        h(AuthCard, { remote: props && props.remote, view: 'page' }),
+        'div',
+        { style: { fontSize: 11, opacity: 0.45, padding: '4px 0' } },
+        '[stitch-ui probe] kind=' + String(subject && subject.kind) + ' pkg=' + String(pkgName),
       );
     }
 
@@ -343,6 +349,15 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('plugins.bundle.config', () =>
           ctx.slots.register({ name: 'plugins.bundle.config', key: NS }, (props) =>
             h(AuthCard, { remote, view: props && props.view }),
+          ),
+        );
+
+        // Visibility probe: a tiny marker in the detail header. Seeing it proves the
+        // Client half loaded and this page's slots reach us; not seeing it means the
+        // Client half is not loading at all.
+        ctx.slots.inject('plugins.detail.badge', () =>
+          ctx.slots.register({ name: 'plugins.detail.badge', id: 'stitch-loaded', order: 5 }, () =>
+            h('span', { style: { fontSize: 11, opacity: 0.5, marginLeft: 6 } }, 'stitch-ui'),
           ),
         );
       },
