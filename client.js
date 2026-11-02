@@ -201,7 +201,16 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { style: s.hint },
-          'Canvas 资源（项目 / 界面 / 设计系统）需要它；与 Google 登录是两套凭据。密钥只写不读，保存后界面上不会再显示。',
+          'Canvas 资源（项目 / 界面 / 设计系统）需要它；与 Google 登录是两套凭据。',
+        ),
+        h(
+          'div',
+          { style: { ...s.hint, whiteSpace: 'pre-line' } },
+          '获取步骤（Stitch 设置页为英文界面）：\n' +
+            '1. 点下方按钮打开设置页\n' +
+            '2. 找到「API key」区块，点右侧「Create key」\n' +
+            '3. 复制生成的密钥（完整密钥只在创建时显示一次）\n' +
+            '4. 粘贴到下面的输入框并点「保存」',
         ),
         h(
           'div',
@@ -213,12 +222,12 @@ window.__ModuleLoader__.load({
               onClick: () =>
                 openUrl(
                   STITCH_SETTINGS,
-                  '已打开 Stitch 设置页：在 API keys 里新建一个密钥，然后粘贴回上面的输入框。',
+                  '已打开 Stitch 设置页：在「API key」区块点「Create key」，复制后粘贴回上面的输入框。',
                 ),
             },
             '打开设置页创建 API Key',
           ),
-          h('span', { style: s.hint }, 'Settings → API keys → 新建 → 复制'),
+          h('span', { style: s.hint }, 'API key → Create key'),
         ),
         h(
           'div',
