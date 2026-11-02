@@ -1,0 +1,37 @@
+# Google Stitch as an MCP server for DeepSeek Harness.
+#
+# The official @google/stitch CLI (pinned 0.12.1) serves MCP over stdio; this is
+# the same entry point `stitch mcp install` registers with other editors.
+#
+# The CLI requires Node >= 20, while whatever `node` sits on PATH may be older,
+# so it is launched with the Host's own interpreter (process.execPath) under
+# ELECTRON_RUN_AS_NODE. See README.md for prerequisites and alternatives.
+- insert:
+    # Bundle's own Host entry; it mounts the Client half (the auth guide card).
+    - id: dsh-stitch-mcp
+      name: '@local/dsh-stitch-mcp'
+      config: {}
+    - id: stitch-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: stitch
+        transport: stdio
+        command: !!js process.execPath
+        args:
+          - !!js "typeof dshHomePath === 'function' ? dshHomePath('dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/mcp.js') : process.env.DSH_PROFILE_DIR + '/../../dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/mcp.js'"
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
+          # The bridge scrubs names matching KEY/PASSWORD/SECRET/TOKEN out of the
+          # ambient environment, so Stitch credentials must be forwarded here.
+          STITCH_API_KEY: !!js "process.env.STITCH_API_KEY || ''"
+          STITCH_ACCESS_TOKEN: !!js "process.env.STITCH_ACCESS_TOKEN || ''"
+          STITCH_PROJECT_ID: !!js "process.env.STITCH_PROJECT_ID || ''"
+          STITCH_BASE_URL: !!js "process.env.STITCH_BASE_URL || ''"
+          # Google endpoints may require an outbound proxy on this network.
+          HTTPS_PROXY: !!js "process.env.HTTPS_PROXY || ''"
+          HTTP_PROXY: !!js "process.env.HTTP_PROXY || ''"
+        # Keep the harness healthy when the CLI or its runtime is missing; the
+        # failure is logged instead of rejecting plugin activation.
+        failOnStartupError: false
+        # stitch_generate starts a backend job, so allow more than the 60s default.
+        toolCallTimeoutMs: 120000

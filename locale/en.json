@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Google Stitch",
+    "description": "Connects Google Stitch over MCP so the agent can list, create, edit and generate Stitch projects, screens and design systems."
+  }
+}

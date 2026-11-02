@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Stitch design canvas">
+  <rect x="6" y="10" width="40" height="44" rx="6" fill="none" stroke="#5B5BD6" stroke-width="4"/>
+  <rect x="14" y="18" width="24" height="6" rx="3" fill="#5B5BD6" opacity="0.85"/>
+  <rect x="14" y="30" width="14" height="16" rx="3" fill="#5B5BD6" opacity="0.45"/>
+  <rect x="32" y="30" width="6" height="16" rx="3" fill="#5B5BD6" opacity="0.45"/>
+  <path d="M50 11l2.7 5.6 5.6 2.7-5.6 2.7L50 27.6l-2.7-5.6-5.6-2.7 5.6-2.7z" fill="#FFB020"/>
+</svg>
