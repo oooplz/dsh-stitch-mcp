@@ -39,7 +39,8 @@
     "icon.svg",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "scripts/*"
   ],
   "dsh": {
     "bundle": {

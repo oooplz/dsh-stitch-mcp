@@ -24,6 +24,7 @@ window.__ModuleLoader__.load({
         proxyUse: 'Use a proxy',
         proxyOn: 'On',
         proxyOff: 'Off',
+        proxyHint: 'The HTTP transport runs in the host process, so launching the harness with HTTPS_PROXY is what actually routes it.',
         hostLabel: 'Proxy IP address',
         portLabel: 'Port',
         pasteKey: 'Paste API Key',
@@ -60,6 +61,7 @@ window.__ModuleLoader__.load({
         proxyUse: '使用代理服务器',
         proxyOn: '开',
         proxyOff: '关',
+        proxyHint: 'HTTP 传输运行在宿主进程内，需用带 HTTPS_PROXY 的启动方式才会生效。',
         hostLabel: '代理 IP 地址',
         portLabel: '端口',
         pasteKey: '粘贴 API Key',
@@ -210,6 +212,7 @@ window.__ModuleLoader__.load({
       fieldLabel: { fontSize: 11, opacity: 0.6, marginBottom: 4, display: 'block' },
       ok: { fontSize: 12, color: 'var(--dsw-alias-state-business-primary)' },
       err: { fontSize: 12, color: '#d14343' },
+      hint: { fontSize: 11, opacity: 0.5, lineHeight: 1.4 },
       foot: { fontSize: 11, opacity: 0.45 },
     };
 
@@ -542,6 +545,7 @@ window.__ModuleLoader__.load({
               ),
             )
           : null,
+        proxyOn ? h('div', { style: s.hint }, t.proxyHint) : null,
         msg ? h('div', { style: msg.kind === 'ok' ? s.ok : s.err }, msg.text) : null,
         h('div', { style: s.foot }, t.restart),
       );

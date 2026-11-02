@@ -1,14 +1,19 @@
 # Google Stitch as an MCP server for DeepSeek Harness.
 #
-# The official @google/stitch CLI (pinned 0.12.1) serves MCP over stdio; this is
-# the same entry point `stitch mcp install` registers with other editors.
+# Google publishes Stitch as a remote MCP endpoint that authenticates with an API
+# key in a header — the same shape their setup docs show for other MCP clients:
 #
-# The CLI requires Node >= 20, while whatever `node` sits on PATH may be older,
-# so it is launched with the Host's own interpreter (process.execPath) under
-# ELECTRON_RUN_AS_NODE. See README.md for prerequisites and alternatives.
+#   "servers": { "stitch": {
+#     "type": "http",
+#     "url": "https://stitch.googleapis.com/mcp",
+#     "headers": { "X-Goog-Api-Key": "AQ...." } } }
+#
+# So this row uses the Streamable HTTP transport with the key as a header. The key
+# never lives in this file: the Host half (index.js) resolves the stored
+# credential into process.env.STITCH_API_KEY before this row activates.
 - insert:
-    # Bundle's own Host entry; it publishes stored credentials into process.env
-    # and mounts the Client half (the credential card).
+    # Bundle's own Host entry: publishes stored credentials into process.env and
+    # mounts the Client half (the credential card).
     - id: dsh-stitch-mcp
       name: 'dsh-stitch-mcp'
       config: {}
@@ -16,33 +21,12 @@
       name: '@deepseek-ai/dsh-mcp-client'
       config:
         serverName: stitch
-        transport: stdio
-        command: !!js process.execPath
-        args:
-          - !!js "typeof dshHomePath === 'function' ? dshHomePath('dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/mcp.js') : process.env.DSH_PROFILE_DIR + '/../../dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/mcp.js'"
-        # The Host half mirrors stored credentials into <this dir>/.env, which the
-        # CLI loads itself. That is what actually delivers the API key: an env
-        # `!!js` expression in this row may be evaluated before the Host half runs.
-        cwd: !!js "typeof dshHomePath === 'function' ? dshHomePath('dsh-runtimes/stitch-mcp') : process.env.DSH_PROFILE_DIR + '/../../dsh-runtimes/stitch-mcp'"
-        env:
-          ELECTRON_RUN_AS_NODE: '1'
-          # Node's built-in fetch (undici) ignores HTTPS_PROXY unless this is set.
-          # Without it the CLI child cannot reach stitch.googleapis.com and every
-          # mcp__stitch__* call fails with UND_ERR_CONNECT_TIMEOUT.
-          NODE_USE_ENV_PROXY: '1'
-          # The bridge scrubs names matching KEY/PASSWORD/SECRET/TOKEN out of the
-          # ambient environment, so Stitch credentials must be forwarded here.
-          # The Host half writes the stored values into process.env first.
-          STITCH_API_KEY: !!js "process.env.STITCH_API_KEY || ''"
-          STITCH_ACCESS_TOKEN: !!js "process.env.STITCH_ACCESS_TOKEN || ''"
-          STITCH_PROJECT_ID: !!js "process.env.STITCH_PROJECT_ID || ''"
-          STITCH_BASE_URL: !!js "process.env.STITCH_BASE_URL || ''"
-          # Outbound proxy: taken from the environment or configured in the card.
-          HTTPS_PROXY: !!js "process.env.HTTPS_PROXY || ''"
-          HTTP_PROXY: !!js "process.env.HTTP_PROXY || ''"
-          NO_PROXY: !!js "process.env.NO_PROXY || ''"
-        # Keep the harness healthy when the CLI or its runtime is missing; the
-        # failure is logged instead of rejecting plugin activation.
+        transport: streamable-http
+        url: https://stitch.googleapis.com/mcp
+        headers:
+          X-Goog-Api-Key: !!js "process.env.STITCH_API_KEY || ''"
+        # Keep the harness healthy when the endpoint is unreachable; the failure is
+        # logged instead of rejecting plugin activation.
         failOnStartupError: false
         # stitch_generate starts a backend job, so allow more than the 60s default.
         toolCallTimeoutMs: 120000
