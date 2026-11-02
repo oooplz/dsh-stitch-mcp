@@ -5,8 +5,13 @@ window.__ModuleLoader__.load({
     const h = React.createElement;
 
     const NS = '@local/dsh-stitch-mcp';
+
+    // Credential references, resolved by the Host `credentials` service. The Host
+    // half reads them at activation and republishes them into process.env so the
+    // MCP row's `!!js` expressions can hand them to the CLI.
     const REF_KEY = 'STITCH_API_KEY';
     const REF_TOKEN = 'STITCH_ACCESS_TOKEN';
+
     const STITCH_HOME = 'https://stitch.withgoogle.com';
 
     const s = {
@@ -54,15 +59,6 @@ window.__ModuleLoader__.load({
       hint: { fontSize: 12, opacity: 0.72 },
       ok: { fontSize: 12, color: 'var(--dsw-alias-state-business-primary)' },
       err: { fontSize: 12, color: '#d14343' },
-      mono: {
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontSize: 11,
-        padding: '7px 9px',
-        borderRadius: 6,
-        background: 'var(--dsw-alias-bg-l2)',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-all',
-      },
       badge: (on) => ({
         display: 'inline-block',
         padding: '1px 7px',
@@ -75,8 +71,8 @@ window.__ModuleLoader__.load({
       }),
     };
 
-    function StitchCredentials(props) {
-      const creds = props && props.creds;
+    function AuthCard(props) {
+      const creds = props.remote && props.remote.credentials;
       const [mode, setMode] = React.useState('api-key');
       const [apiKey, setApiKey] = React.useState('');
       const [token, setToken] = React.useState('');
@@ -84,7 +80,7 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = React.useState(false);
       const [msg, setMsg] = React.useState(null);
 
-      const readState = () => {
+      const refresh = React.useCallback(() => {
         if (!creds || typeof creds.describe !== 'function') return;
         creds.describe([REF_KEY, REF_TOKEN]).then(
           (res) => {
@@ -97,16 +93,27 @@ window.__ModuleLoader__.load({
           },
           () => {},
         );
-      };
+      }, [creds]);
 
       React.useEffect(() => {
-        readState();
-        return undefined;
-      }, [creds]);
+        refresh();
+      }, [refresh]);
+
+      // The owner renders this entry twice: a one-liner in list rows (`summary`)
+      // and the full form on the bundle page (`page`). Never put the form in a row.
+      if (props.view === 'summary') {
+        return h(
+          'span',
+          { 'data-stitch-auth-summary': true },
+          state.key || state.token
+            ? '凭据已配置' + (state.key ? ' · API Key' : '') + (state.token ? ' · OAuth' : '')
+            : '未配置凭据',
+        );
+      }
 
       const store = (ref, value, label) => {
         if (!creds || typeof creds.set !== 'function') {
-          setMsg({ kind: 'err', text: '当前构建没有向插件暴露 credentials 服务，无法保存。' });
+          setMsg({ kind: 'err', text: '当前构建没有暴露 credentials 服务，无法保存。' });
           return;
         }
         if (!value || value.trim().length === 0) {
@@ -122,7 +129,7 @@ window.__ModuleLoader__.load({
               setMsg({ kind: 'ok', text: label + ' 已保存。重启 Harness 后生效。' });
               if (ref === REF_KEY) setApiKey('');
               else setToken('');
-              readState();
+              refresh();
             } else {
               setMsg({ kind: 'err', text: (res && res.error && res.error.message) || '保存失败。' });
             }
@@ -140,15 +147,12 @@ window.__ModuleLoader__.load({
         creds.unset(ref).then(
           (res) => {
             setBusy(false);
-            if (res && res.ok === true) {
-              setMsg({ kind: 'ok', text: label + ' 已清除。' });
-              setState((prev) => ({
-                key: ref === REF_KEY ? false : prev.key,
-                token: ref === REF_TOKEN ? false : prev.token,
-              }));
-            } else {
-              setMsg({ kind: 'err', text: (res && res.error && res.error.message) || '清除失败。' });
-            }
+            setMsg(
+              res && res.ok === true
+                ? { kind: 'ok', text: label + ' 已清除。' }
+                : { kind: 'err', text: (res && res.error && res.error.message) || '清除失败。' },
+            );
+            refresh();
           },
           (e) => {
             setBusy(false);
@@ -160,11 +164,8 @@ window.__ModuleLoader__.load({
       const openBrowser = () => {
         try {
           const w = window.open(STITCH_HOME, '_blank', 'noopener');
-          setMsg(
-            w
-              ? { kind: 'ok', text: '已在新标签打开 Stitch。' }
-              : { kind: 'err', text: '弹窗被拦截，请手动打开 ' + STITCH_HOME },
-          );
+          if (!w) setMsg({ kind: 'err', text: '浏览器拦截了弹窗，请手动打开 ' + STITCH_HOME });
+          else setMsg({ kind: 'ok', text: '已在新标签打开 Stitch。' });
         } catch (e) {
           setMsg({ kind: 'err', text: '打开失败：' + ((e && e.message) || String(e)) });
         }
@@ -182,7 +183,7 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { style: s.hint },
-          'Canvas 资源（项目 / 界面 / 设计系统）需要它，与 Google 登录是两套凭据。密钥只写不读，保存后不会再显示。',
+          'Canvas 资源（项目 / 界面 / 设计系统）需要它；与 Google 登录是两套凭据。密钥只写不读，保存后界面上不会再显示。',
         ),
         h(
           'div',
@@ -236,9 +237,13 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { style: s.hint },
-          '点按钮在浏览器里完成 Google 授权，把拿到的 access token 粘贴到下面保存；也可以先跑一次登录命令，CLI 会把令牌存在本地。',
+          '点按钮在浏览器里完成 Google 授权；拿到 access token 后粘贴到下面保存。也可以先执行一次登录命令，CLI 会把令牌存在本地。',
         ),
-        h('div', { style: s.row }, h('button', { type: 'button', onClick: openBrowser, style: s.btn(true) }, '打开浏览器授权')),
+        h(
+          'div',
+          { style: s.row },
+          h('button', { type: 'button', onClick: openBrowser, style: s.btn(true) }, '打开浏览器授权'),
+        ),
         h(
           'div',
           { style: s.row },
@@ -279,14 +284,25 @@ window.__ModuleLoader__.load({
         ),
         h(
           'div',
-          { style: s.mono },
+          {
+            style: {
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              fontSize: 11,
+              padding: '7px 9px',
+              borderRadius: 6,
+              background: 'var(--dsw-alias-bg-l2)',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+            },
+          },
           'node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login',
         ),
       );
 
       return h(
         'div',
-        { 'data-stitch-credentials': true, style: s.card },
+        { 'data-stitch-auth': true, style: s.card },
+        h('div', { style: { fontWeight: 600 } }, 'Stitch 凭据'),
         h(
           'div',
           { style: s.tabs },
@@ -304,27 +320,13 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      // Only `slots` is a hard dependency: an unmet inject keeps a client plugin
-      // inactive, so every optional service is read through ctx.get instead.
-      inject: ['slots'],
+      inject: ['slots', 'remote'],
       apply(ctx) {
-        const get = (name) => (typeof ctx.get === 'function' ? ctx.get(name) : undefined);
-        const remotes = get('remote');
-        const creds = remotes && remotes.credentials;
-        const view = () => h(StitchCredentials, { creds });
-
-        // A settings page of its own: visible even when the bundle page's
-        // configuration entry is not dispatched.
-        ctx.slots.inject('settings.section', () =>
-          ctx.slots.register(
-            { name: 'settings.section', id: 'stitch', order: 60, label: 'Stitch' },
-            view,
-          ),
-        );
-
-        // The bundle's own configuration area on its plugin page.
+        const remote = ctx.remote;
         ctx.slots.inject('plugins.bundle.config', () =>
-          ctx.slots.register({ name: 'plugins.bundle.config', key: NS }, view),
+          ctx.slots.register({ name: 'plugins.bundle.config', key: NS, locale: NS }, (props) =>
+            h(AuthCard, { remote, view: props && props.view }),
+          ),
         );
       },
     };
