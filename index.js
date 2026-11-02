@@ -269,7 +269,7 @@ async function applyProxyRoute(proxyUrl) {
     // working instead of silently pointing at a detached object.
     const stale = router;
     const previous = stale && module.getGlobalDispatcher() === stale.dispatcher ? stale.previous : module.getGlobalDispatcher();
-    router = createStitchRouter({ previous, undici: module });
+    router = { ...createStitchRouter({ previous, undici: module }), previous };
     module.setGlobalDispatcher(router.dispatcher);
     if (stale) await stale.close();
     log('proxy route installed for the Stitch origin only');
