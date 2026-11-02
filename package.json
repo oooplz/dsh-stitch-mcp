@@ -1,7 +1,7 @@
 {
   "name": "@local/dsh-stitch-mcp",
-  "version": "1.2.0",
-  "description": "Google Stitch as native mcp__stitch__* tools in DeepSeek Harness, with an in-panel credential card for API Key and OAuth.",
+  "version": "1.2.1",
+  "description": "Google Stitch as native mcp__stitch__* tools in DeepSeek Harness. Credentials are resolved from the Host credentials service at activation.",
   "type": "module",
   "keywords": [
     "dsh",
@@ -14,13 +14,11 @@
   "license": "MIT",
   "exports": {
     ".": "./index.js",
-    "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
   "files": [
     "index.js",
-    "client.js",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
@@ -30,14 +28,6 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "immediately": true,
-      "inject": [
-        "@deepseek-ai/dsh-client-ui-plugin-manager",
-        "@deepseek-ai/dsh-api-remotes"
-      ]
     }
   }
 }
