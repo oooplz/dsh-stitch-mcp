@@ -1,183 +1,180 @@
 # AGENTS.md — dsh-stitch-mcp
 
-Working notes for anyone (human or agent) picking this project up cold.
+Orientation for anyone — human or agent — picking this repository up cold.
 
-Project: `C:\project\dsh-plugins\dsh-stitch-mcp` · remote `https://github.com/oooplz/dsh-stitch-mcp.git`
-(branch `main`, published on npm as `dsh-stitch-mcp`).
+`dsh-stitch-mcp` publishes Google **Stitch** as native `mcp__stitch__*` tools inside
+DeepSeek Harness. Stitch is a **remote MCP endpoint** (`https://stitch.googleapis.com/mcp`,
+Streamable HTTP); the bundle contributes one direct MCP row for it and a credential card
+on the plugin page. MIT licensed, published on npm as `dsh-stitch-mcp`.
 
-Google Stitch is a **remote MCP endpoint** (`https://stitch.googleapis.com/mcp`,
-Streamable HTTP). This plugin registers its 16 tools in DeepSeek Harness as
-`mcp__stitch__*` and adds a credential card to the plugin page.
-
----
+The 0.6.0 line has **no helper process, no local port and no launcher script**: the MCP
+row talks to Google itself, and the harness owns the network. Older releases carried a
+local relay; nothing in this tree does that any more, and nothing should reintroduce it.
 
 ## 1. Architecture
 
 ```
-插件卡片(credentials 服务)
-        │  Host 半 index.js  ├─→ ~/.dsh/dsh-runtimes/stitch-mcp/config.json
-.credentials.yaml ──────────┘        │  (apiKey / accessToken / projectId / proxy)
-上一次 config.json ──────────┘        ↓  每个请求都重读
-                              relay.js  (127.0.0.1:7788/mcp)  ──proxy──→ stitch.googleapis.com
-                                        ↑
-                        @deepseek-ai/dsh-mcp-client (streamable-http)
+card  (client.js, slot `plugins.bundle.config`)
+  │   credentials service: set / describe / unset  (write-only from the UI)
+  ▼
+Host half  (index.js)
+  ├─→ $DSH_HOME/dsh-runtimes/stitch-mcp/config.json   0600, the only source of truth
+  ├─→ $DSH_HOME/dsh-runtimes/stitch-mcp/status.json   self-check result
+  ├─→ $DSH_HOME/.env                                  managed HTTPS_PROXY block
+  └─→ pluginManager.reload(['stitch-mcp'])            re-compose the row after a save
+        ▼
+@deepseek-ai/dsh-mcp-client  (streamable-http)  ──https──→  stitch.googleapis.com/mcp
 ```
 
-| 文件 | 职责 |
+`$DSH_HOME` is `DSH_HOME` when set, otherwise `~/.dsh`.
+
+| File | Role |
 | :-- | :-- |
-| `cordis.patch.yml` | 插入 Host 行 `dsh-stitch-mcp`，再插入 `@deepseek-ai/dsh-mcp-client` 行（`streamable-http` → `http://127.0.0.1:7788/mcp`，带 `reconnect`） |
-| `index.js` | Host 半：解析凭证 → 写 `config.json` → 拉起/维持 relay → 每 30s 巡检 + 一次真实 `initialize/tools/list` → 写 `status.json` |
-| `relay.js` | 本地 relay：按请求选路（直连 / 代理隧道）、注入凭证头、转发请求与响应流 |
-| `client.js` | Client 半：`plugins.bundle.config` 里的凭证卡片（API Key / OAuth 两个 tab + 独立代理开关），`I18N` 字典在文件内 |
-| `locale/{en,zh}.json` | 插件列表里的标题/描述（未激活时也要能显示） |
-| `scripts/` | **已废弃**的代理启动脚本，仅为其它插件保留，Stitch 不再需要 |
-| `market/listing.json` | 应用市场提交条目（spec/version 必须与 package.json 同步） |
+| `cordis.patch.yml` | Inserts the Host entry, then the `@deepseek-ai/dsh-mcp-client` row (`streamable-http`, credential headers, `reconnect`) |
+| `index.js` | Host half: resolves credentials, keeps `config.json` / `status.json` / `plugin.log`, manages the proxy block in `$DSH_HOME/.env`, reloads the MCP row on a change |
+| `client.js` | Client half: the credential card (API Key / OAuth tabs, proxy switch, `I18N` dictionaries) |
+| `locale/{en,zh}.json` | Plugin title and description shown before activation |
+| `package.json` | Manifest: `dsh.bundle.patch`, `dsh.client`, and the `files` allowlist for npm |
+| `market/listing.json` | Plugin Market submission; its `spec` / `version` must match `package.json` |
+| `README.md`, `CHANGELOG.md`, `LICENSE` | User-facing docs, release history, MIT licence |
+| `icon.svg` | Plugin icon |
 
-运行时目录（**不属于仓库**）：`~/.dsh/dsh-runtimes/stitch-mcp/`
-`config.json`（0600，唯一的配置事实来源）、`status.json`（自检结果）、`relay.log`（relay 日志）。
+Runtime files (created on demand, **not** part of the repository):
 
-### 为什么有 relay
-
-1. `streamable-http` 传输跑在 Harness 宿主进程里，**没有任何代理选项**；宿主进程又不认
-   `HTTPS_PROXY`（Node 只在启动时带 `--use-env-proxy` / `NODE_USE_ENV_PROXY` 才生效，插件改不了）。
-2. `!!js` 配置表达式可能在 Host 半激活**之前**求值 —— 一旦用它注入凭证，客户端会发出**空的
-   `X-Goog-Api-Key`**，把真 key 挡掉。这是 0.4.x 阶段"重启后必挂"的根因之一，务必不要再往
-   `cordis.patch.yml` 里写凭证 header。
-
-所以 relay 自己用 `CONNECT` 打通代理隧道（把 socket 交给 `https.Agent.createConnection`），
-不依赖任何启动开关，任何 Node 版本都能跑；凭证/代理都在每个请求重读 `config.json`，
-改完立即生效。
-
-### 选路规则（0.5.0 起）
-
-| 卡片开关 | 顺序 |
+| Path | Meaning |
 | :-- | :-- |
-| 关（默认） | 先直连 → 不通再找本机代理 |
-| 开 + 地址 | 先走该地址 → 失败回落直连 |
+| `dsh-runtimes/stitch-mcp/config.json` | `apiKey` / `accessToken` / `projectId` / `proxy`, mode `0600` |
+| `dsh-runtimes/stitch-mcp/status.json` | `ok`, `endpoint`, `credential`, `proxy`, `reachable`, `tools`, `error`, `checkedAt`, and `reload` (`{reloaded, reason}`) whenever the config file changed |
+| `dsh-runtimes/stitch-mcp/plugin.log` | One line per config write / proxy write / row reload |
+| `.env` | Optional block, delimited by `# >>> dsh-stitch-mcp proxy (managed; restart the harness to apply)` and `# <<< dsh-stitch-mcp proxy` |
 
-"找本机代理" = `HTTP(S)_PROXY` / `ALL_PROXY` 环境变量 → Windows 系统代理（仅启用时）→
-常见本地端口 `7897 7890 10809 10808 1080 8118 8889`。走通的路记 5 分钟。
+Upgrades leave debris in that runtime directory: a `relay.log`, and a detached relay
+process from 0.5.x that still idles on `127.0.0.1:7788` (installing 0.6.0 does not stop
+it), plus an `@google/stitch` dependency folder from 0.4.x. Nothing reads any of it —
+delete the files and kill the process (or reboot) to reclaim the port. Never delete
+`config.json`: it is the stored setup.
 
----
+### Why the shape is what it is
 
-## 2. 本地安装 / 测试（新会话最容易卡在这里）
+1. **The credential is read from a file, not from a service.** Config expressions are
+   evaluated before any plugin runs, so `headers` in the YAML cannot await the
+   `credentials` service. The row reads `config.json` synchronously via
+   `process.getBuiltinModule('fs')` instead, and the Host half maintains that file.
+2. **The header expression may only build the headers that exist.** An empty
+   `X-Goog-Api-Key` reaches Stitch as a real (wrong) header and shadows the stored key.
+3. **A saved key has to re-compose the row.** `pluginManager.reload(['stitch-mcp'])` is
+   the same live reconcile the Plugin Manager's own toggle performs; that is what makes
+   a save apply without a restart.
+4. **`server/discover` decides whether the connection starts at all.** The MCP client
+   probes it before `initialize`, and a 5xx answer ends the attempt permanently. Stitch
+   answers the probe with a JSON-RPC "method not supported" at HTTP 200, so the client
+   falls back to the classic handshake and lists the 16 tools even before a credential
+   exists. Do not put anything on that path that can answer 5xx.
+5. **The plugin does not route traffic.** The harness installs one outbound proxy policy
+   per process (`HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY`, exported or in
+   `$DSH_HOME/.env`) and every `fetch` follows it, this transport included. The card's
+   switch only writes that block — which is why a proxy change needs a harness restart
+   while a credential change does not.
+6. **Keep the two rows in `cordis.patch.yml` in order.** The Host half is what writes
+   `config.json`, so it must be inserted before the MCP row that reads it.
 
-没有自动化测试，全部靠"装进 profile → 热重载 → 看 `status.json` → 真调一次工具"。
+## 2. Local test loop
 
-### 2.1 装进当前 profile
+There is no automated test suite. Verification means: install → reload → read the status
+file → **call a real tool**.
 
-profile 在 `~/.dsh/profiles/desktop`（`package.json` 的 `dsh.profile.bundles` 里要有
-`dsh-stitch-mcp`）。两种方式：
+1. **Install into a profile** (the harness profile you actually launch):
 
-```bash
-# A. 从 npm（发布过的版本，最接近真实用户）
-#    用 plugin_manager 工具：remove_bundle → install_bundle(target="dsh-stitch-mcp@x.y.z",
-#    registry="https://registry.npmjs.org")
-#    （包已装过时必须先 remove，否则返回 already-installed）
+   ```bash
+   # from the registry — closest to a real user
+   dsh plugin --profile <profile> add dsh-stitch-mcp@x.y.z
+   # or from a local build, when one line of source changed
+   npm pack --pack-destination <dir>     # then point the profile at the .tgz
+   ```
 
-# B. 用本地源码（改一行就想验证时用这个，不改版本号）
-cd C:/project/dsh-plugins/dsh-stitch-mcp
-npm pack --pack-destination C:/project/dsh-plugins/_dist
-#   再把 profile package.json 的依赖指向该 tgz，然后 pnpm install
-```
+   When testing a build you have just published, pin the exact version: the harness holds
+   back very fresh releases (`minimumReleaseAge`), so `@latest` can still resolve to the
+   previous one. `README.md`, written for users, therefore recommends `@latest`.
 
-### 2.2 热重载（不用重启 Harness）
+2. **Reload without restarting the harness.** Toggle the bundle off and on again
+   (`plugin_manager` → `set_bundle` `enabled=false`, then `enabled=true`). An
+   `application: "applied"` answer means the new code is active. Do **not** register the
+   card through a `settings.section` — that path has taken the harness down before.
 
-调用 `plugin_manager` 工具，先 `set_bundle` `enabled=false`，再 `set_bundle`
-`enabled=true`（target `dsh-stitch-mcp`）。返回 `application: "applied"` 即已重新激活。
-**不要**用 `settings.section` 注册卡片 —— 曾经直接把 Harness 启动搞挂。
+   To try a single-file change without reinstalling, overwrite the installed copy. It is
+   hard-linked into the package store, so `rm` first, then `cp`:
 
-如果只想让某个文件立刻生效、不想重装：直接覆盖 profile 里的副本即可（注意 pnpm 用硬链接，
-必须先 `rm` 再 `cp`，否则会写穿到 store）：
+   ```bash
+   for f in index.js client.js cordis.patch.yml; do
+     rm -f "<profile>/node_modules/dsh-stitch-mcp/$f"
+     cp "$f" "<profile>/node_modules/dsh-stitch-mcp/$f"
+   done
+   ```
 
-```bash
-D="C:/Users/yangjiacheng/.dsh/profiles/desktop/node_modules/dsh-stitch-mcp"
-for f in index.js relay.js client.js cordis.patch.yml; do rm -f "$D/$f" && cp "$f" "$D/$f"; done
-```
+3. **Check the evidence** — all of it, in this order:
 
-### 2.3 验证（三步，缺一不可）
+   ```bash
+   cat "$DSH_HOME/dsh-runtimes/stitch-mcp/status.json"
+   # {"ok": true, "endpoint": "https://stitch.googleapis.com/mcp",
+   #  "credential": "api-key", "proxy": null, "reachable": true,
+   #  "tools": 16, "checkedAt": "..."}
+   ```
 
-```bash
-# 1. Host 半自检：ok / credential / proxy / route / tools
-cat ~/.dsh/dsh-runtimes/stitch-mcp/status.json
-#    期望 {"ok": true, "credential": "api-key", "route": "...", "tools": 16}
+   Then call `mcp__stitch__list_projects` (or `list_screens` with a known project id).
+   A healthy `status.json` is never proof on its own: it round-trips `initialize` +
+   `tools/list`, not a tool call.
 
-# 2. relay 活着，且知道这次走哪条路
-curl -s http://127.0.0.1:7788/healthz
-
-# 3. 真调一次工具（不要只看 status.json 就宣布成功）
-#    mcp__stitch__list_projects / mcp__stitch__list_screens(projectId=...)
-```
-
-`status.json` 诊断对照：
-
-| 值 | 含义 |
+| `status.json` | Meaning |
 | :-- | :-- |
-| `ok: false, error: "no credential configured"` | 卡片里没存凭证 |
-| `ok: false, httpStatus: 502, error: {"reason":"ETIMEDOUT"}` | 直连和所有代理都不通 |
-| `ok: ` 缺失 / 文件不存在 | Host 半没激活（bundle 未启用或重载失败） |
-| `tools: 16` | 正常 |
+| `ok: true, tools: 16` | Healthy |
+| `credential: null` | Nothing resolved at all — no card value, no credentials file, no environment variable, no previous `config.json` |
+| `reachable: false`, `error: "UND_ERR_CONNECT_TIMEOUT"` / `"fetch failed"` | No route to the endpoint: give the process a proxy, then restart |
+| `error: "HTTP 4xx/5xx"` | The endpoint answered and rejected the handshake |
+| file missing | The Host half never activated (bundle disabled, or the reload failed) |
+| a `route` field instead of `endpoint` | Written by a pre-0.6.0 build: the old code is still loaded, restart |
 
-工具注册状态可以直接查：`cordis_inspect_query(platform="host", provider="Tool",
-method="listTools")`，再在结果里找 `mcp__stitch__`。这比问用户"你能看到工具吗"快得多。
+Registered tools can also be inspected from the harness itself
+(`cordis_inspect_query(platform="host", provider="Tool", method="listTools")`, then look
+for `mcp__stitch__*`) — faster than asking the user what they can see.
 
-### 2.4 单独跑 relay（不经过 Harness）
+## 3. Release
 
-```bash
-cd ~/.dsh/dsh-runtimes/stitch-mcp          # config.json 必须在这个 cwd
-STITCH_RELAY_PORT=7799 node C:/project/dsh-plugins/dsh-stitch-mcp/relay.js &
-curl -s http://127.0.0.1:7799/healthz
-```
+1. Bump `package.json`, add the `[x.y.z]` section in `CHANGELOG.md`, and sync `spec` /
+   `version` in `market/listing.json`. **Never** bump the version unprompted.
+2. Add any newly shipped file to `files` in `package.json` — npm ships exactly that
+   allowlist plus `package.json` itself. `npm pack --dry-run` shows the real contents.
+3. Commit, tag, push (`--follow-tags`), then `npm publish`. Expect a minute or two of
+   registry lag before an install can resolve the new version.
+4. Keep the link definitions at the bottom of `CHANGELOG.md` in step with the new tag.
 
----
+## 4. Known pitfalls
 
-## 3. 发布流程
-
-```bash
-# 1. 改版本（package.json + CHANGELOG 的 [x.y.z] 段 + market/listing.json 的 spec/version）
-#    ⚠️ 未经用户确认不要自行改版本号
-# 2. 提交 + tag + push（GitHub 直连被墙，必须带代理）
-git add -A && git commit -m "chore(release): x.y.z"
-git tag -a vx.y.z -m "x.y.z: ..."
-https_proxy=http://127.0.0.1:7897 http_proxy=http://127.0.0.1:7897 git push origin main --follow-tags
-# 3. npm publish（本机默认 registry 是 npmmirror，且未登录；用临时 npmrc + 环境变量注入 token）
-printf 'registry=https://registry.npmjs.org\n//registry.npmjs.org/:_authToken=${NPM_TOKEN}\nproxy=http://127.0.0.1:7897\nhttps-proxy=http://127.0.0.1:7897\n' > /tmp/npmrc-pub/.npmrc
-NPM_TOKEN=<token> npm publish --userconfig /tmp/npmrc-pub/.npmrc
-rm -rf /tmp/npmrc-pub                      # token 不落盘
-# 4. 等 1-3 分钟，确认 dist-tags.latest
-curl -s -x http://127.0.0.1:7897 https://registry.npmjs.org/dsh-stitch-mcp | grep -o '"latest":"[^"]*"'
-```
-
-事实记录：
-
-- 网络：`stitch.googleapis.com` 和 `github.com` **直连不通**，本机代理 `http://127.0.0.1:7897`；
-  npm registry 也要走代理。
-- GitHub PAT 只有内容读写权限：`POST /releases` 与 topics 会被 403，**Release 页面得人工建**。
-- npm 发布后 registry 有 1-3 分钟延迟，期间 `install_bundle` 会解析不到新版本。
-
----
-
-## 4. 已知坑
-
-| 坑 | 处理 |
+| Pitfall | Handling |
 | :-- | :-- |
-| `!!js` 注入凭证 | 永远不要；凭证只在 relay 里注入 |
-| 激活顺序 | Host 半可能早于 `credentials` 服务 → 必须多路兜底（服务 → `.credentials.yaml` → 环境变量 → 上次 config.json），且**绝不能因为读到空就删配置** |
-| `settings.section` | 会让 Harness 起不来，禁用 |
-| `plugins.bundle.config` | 只有当宿主存在 Config 表单时才会派发；本 bundle 无 Config，卡片挂载依赖 Host 侧 slot 行为，改动前先热重载验证 |
-| pnpm 硬链接 | 覆盖 profile 内文件要先 `rm` 再 `cp` |
-| `remove_bundle` + `link:` 依赖 | 会破坏源仓库 `.git`（HEAD/config/index 全没），只用 tarball / registry 安装 |
-| 目录被占用 | DSH 监听当前工作区，旧项目目录可能 `Device or resource busy`：用 `cp -a` 复制到新位置再删，删不掉就等关掉 DSH |
-| `reg query` / `node -e` 传反斜杠 | Git Bash 下会被吃掉，用 `powershell -NoProfile -Command` 读注册表 |
-| MSYS 下 `mv` 跨目录 | 先 `cp -a` 再清理，别指望 `mv` |
+| A credential written into `cordis.patch.yml` | Never. The row reads `config.json`; a literal leaks the key into the repository and goes stale |
+| An empty credential header | Emit only the headers that exist, otherwise the empty one shadows the real one |
+| Assuming `config.json` alone applies a key | It does not: config expressions are evaluated at compose time, so the reload of `stitch-mcp` is part of the flow |
+| `reconnect.maxAttempts` | One-way: a row that gave up stays dead. A credential save (or a harness restart) re-arms it |
+| `settings.section` for the card | Breaks harness startup — the card belongs in `plugins.bundle.config` |
+| Overwriting an installed copy | `rm` before `cp`; `pnpm` hard-links into the store, so a plain `cp` writes through it |
+| Proxy switch "does nothing" | The block lands in `$DSH_HOME/.env`, which is read at launch. Restart, then check the file |
+| Deleting `config.json` to "reset" | Loses the stored setup; clear the field in the card instead, which unsets the credential properly |
+| Reinstalling over a `link:` dependency | Can damage a source checkout; install from a tarball or the registry |
 
----
+## 5. Conventions
 
-## 5. 用户偏好（照做，别自作主张）
-
-- UI 文案要短、面向开发者，不要教程式长句；字体/主题跟随系统，不要自定义字体。
-- 凭证标签一律写 **API Key**，不能简写成 KEY。
-- 源码、README、CHANGELOG、注释全部**英文**；界面文案走 `client.js` 里的 `I18N`（en/zh）。
-- 代理是独立开关 + IP/端口，默认 `127.0.0.1:7897`，两项都必填；但**没有代理的机器必须零配置可用**。
-- 不要擅自改版本号、不要擅自改插件描述/README 措辞。
-- 结论要有证据：改完必须真调一次 `mcp__stitch__*` 工具，别只贴日志。
+- **English everywhere** in source, comments, `README.md`, `CHANGELOG.md` and this file.
+  UI copy lives in the `I18N` table in `client.js` (en/zh), because a client half cannot
+  import modules; `locale/*.json` carries only title and description.
+- UI copy is short and developer-facing — no tutorial sentences. Fonts and theme follow
+  the harness; do not introduce custom typography.
+- The credential tab is always labelled **API Key**, never abbreviated.
+- A network with no proxy must work with **zero configuration**; the proxy is opt-in, and
+  both host and port are required when it is on.
+- `projectId` has no card field today. It is resolved from `STITCH_PROJECT_ID` through the
+  usual chain (credentials service → `$DSH_HOME/.credentials.yaml` → environment →
+  previous `config.json`) and sent as `X-Goog-User-Project`.
+- Do not rewrite the plugin description or README wording, and do not bump versions,
+  unless the maintainer asks.
+- Claims need evidence: after a change, call a `mcp__stitch__*` tool instead of pasting
+  logs and declaring success.
