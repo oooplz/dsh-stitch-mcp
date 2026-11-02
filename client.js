@@ -11,6 +11,8 @@ window.__ModuleLoader__.load({
     const SETTINGS_URL = 'https://stitch.withgoogle.com/settings';
     const LOGIN_COMMAND =
       'node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login';
+    const DEFAULT_HOST = '127.0.0.1';
+    const DEFAULT_PORT = '7897';
 
     // UI copy. A client half cannot import modules, so the dictionaries live here;
     // locale/*.json carries the plugin's meta title and description.
@@ -18,12 +20,16 @@ window.__ModuleLoader__.load({
       en: {
         apiKeyTab: 'API Key',
         oauthTab: 'OAuth',
-        proxyLabel: 'Proxy',
+        proxyTitle: 'Proxy server',
+        proxyUse: 'Use a proxy',
+        proxyOn: 'On',
+        proxyOff: 'Off',
+        hostLabel: 'Proxy IP address',
+        portLabel: 'Port',
         pasteKey: 'Paste API Key',
         pasteToken: 'Paste AccessToken',
         replaceKey: 'Replace API Key',
         replaceToken: 'Replace AccessToken',
-        pasteProxy: 'Enter a local proxy, e.g. http://127.0.0.1:7897',
         createKey: 'Create API Key',
         copyCommand: 'Copy login command',
         openSettings: 'Open settings',
@@ -34,6 +40,8 @@ window.__ModuleLoader__.load({
         notSet: 'Not set',
         restart: 'Restart the harness to apply changes.',
         empty: 'Value is empty.',
+        proxyRequired: 'Host and port are required.',
+        portInvalid: 'Port must be a number between 1 and 65535.',
         noService: 'The credentials service is unavailable.',
         saveFailed: 'Save failed.',
         clearFailed: 'Clear failed.',
@@ -48,12 +56,16 @@ window.__ModuleLoader__.load({
       zh: {
         apiKeyTab: 'API Key',
         oauthTab: 'OAuth',
-        proxyLabel: '代理',
+        proxyTitle: '代理服务器',
+        proxyUse: '使用代理服务器',
+        proxyOn: '开',
+        proxyOff: '关',
+        hostLabel: '代理 IP 地址',
+        portLabel: '端口',
         pasteKey: '粘贴 API Key',
         pasteToken: '粘贴 AccessToken',
         replaceKey: '替换 API Key',
         replaceToken: '替换 AccessToken',
-        pasteProxy: '请输入本机代理，如 http://127.0.0.1:7897',
         createKey: '创建 API Key',
         copyCommand: '复制登录命令',
         openSettings: '打开设置页',
@@ -64,6 +76,8 @@ window.__ModuleLoader__.load({
         notSet: '未配置',
         restart: '重启 Harness 后生效。',
         empty: '内容为空。',
+        proxyRequired: '服务器和端口都不能为空。',
+        portInvalid: '端口需为 1–65535 的数字。',
         noService: 'credentials 服务不可用。',
         saveFailed: '保存失败。',
         clearFailed: '清除失败。',
@@ -153,6 +167,18 @@ window.__ModuleLoader__.load({
         background: 'var(--dsw-alias-bg-l1)',
         color: 'inherit',
       },
+      numInput: {
+        width: 96,
+        flex: '0 0 auto',
+        height: 32,
+        boxSizing: 'border-box',
+        padding: '0 10px',
+        fontSize: 13,
+        borderRadius: 6,
+        border: BORDER,
+        background: 'var(--dsw-alias-bg-l1)',
+        color: 'inherit',
+      },
       btn: (primary) => ({
         height: 32,
         boxSizing: 'border-box',
@@ -179,23 +205,60 @@ window.__ModuleLoader__.load({
         whiteSpace: 'nowrap',
       },
       actions: { display: 'flex', alignItems: 'center', gap: 10, minHeight: 18 },
-      divider: {
-        height: 1,
-        background: 'var(--dsw-alias-border-l1)',
-        opacity: 0.6,
-      },
-      label: { fontSize: 12, fontWeight: 600, opacity: 0.9 },
+      divider: { height: 1, background: 'var(--dsw-alias-border-l1)', opacity: 0.6 },
+      sectionTitle: { fontSize: 12, fontWeight: 600, opacity: 0.9 },
+      fieldLabel: { fontSize: 11, opacity: 0.6, marginBottom: 4, display: 'block' },
       ok: { fontSize: 12, color: 'var(--dsw-alias-state-business-primary)' },
       err: { fontSize: 12, color: '#d14343' },
       foot: { fontSize: 11, opacity: 0.45 },
     };
 
+    function Switch(props) {
+      const on = props.on;
+      return h(
+        'button',
+        {
+          type: 'button',
+          role: 'switch',
+          'aria-checked': on,
+          'aria-label': props.label,
+          onClick: props.onToggle,
+          style: {
+            width: 36,
+            height: 20,
+            flex: '0 0 auto',
+            borderRadius: 999,
+            border: 'none',
+            padding: 2,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: on ? 'flex-end' : 'flex-start',
+            background: on ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-border-l1)',
+            transition: 'background 120ms ease',
+          },
+        },
+        h('span', {
+          style: {
+            width: 16,
+            height: 16,
+            borderRadius: '50%',
+            background: '#fff',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
+          },
+        }),
+      );
+    }
+
     function CredentialCard(props) {
       const creds = props.creds;
       const t = props.t;
       const [tab, setTab] = React.useState('key');
-      const [values, setValues] = React.useState({ key: '', oauth: '', proxy: '' });
+      const [values, setValues] = React.useState({ key: '', oauth: '' });
       const [state, setState] = React.useState({ key: false, oauth: false, proxy: false });
+      const [proxyOn, setProxyOn] = React.useState(false);
+      const [host, setHost] = React.useState(DEFAULT_HOST);
+      const [port, setPort] = React.useState(DEFAULT_PORT);
       const [busy, setBusy] = React.useState(null);
       const [msg, setMsg] = React.useState(null);
 
@@ -205,11 +268,9 @@ window.__ModuleLoader__.load({
           (res) => {
             if (!res || res.ok !== true) return;
             const v = res.value || {};
-            setState({
-              key: Boolean(v[REF_KEY] && v[REF_KEY].configured === true),
-              oauth: Boolean(v[REF_TOKEN] && v[REF_TOKEN].configured === true),
-              proxy: Boolean(v[REF_PROXY] && v[REF_PROXY].configured === true),
-            });
+            const configured = (ref) => Boolean(v[ref] && v[ref].configured === true);
+            setState({ key: configured(REF_KEY), oauth: configured(REF_TOKEN), proxy: configured(REF_PROXY) });
+            setProxyOn(configured(REF_PROXY));
           },
           () => {},
         );
@@ -220,23 +281,20 @@ window.__ModuleLoader__.load({
         return undefined;
       }, [creds]);
 
-      const save = (ref, slot, value) => {
+      const write = (ref, slot, value, okText) => {
         if (!creds || typeof creds.set !== 'function') {
           setMsg({ kind: 'err', text: t.noService });
           return;
         }
-        if (!value || !value.trim()) {
-          setMsg({ kind: 'err', text: t.empty });
-          return;
-        }
         setBusy(slot);
         setMsg(null);
-        creds.set(ref, value.trim()).then(
+        creds.set(ref, value).then(
           (res) => {
             setBusy(null);
             if (res && res.ok === true) {
-              setMsg({ kind: 'ok', text: t.saved });
-              setValues((prev) => ({ ...prev, [slot]: '' }));
+              setMsg({ kind: 'ok', text: okText });
+              if (slot === 'proxy') setProxyOn(true);
+              else setValues((prev) => ({ ...prev, [slot]: '' }));
               describe();
             } else {
               setMsg({ kind: 'err', text: (res && res.error && res.error.message) || t.saveFailed });
@@ -249,7 +307,15 @@ window.__ModuleLoader__.load({
         );
       };
 
-      const clear = (ref, slot) => {
+      const saveField = (ref, slot, value) => {
+        if (!value || !value.trim()) {
+          setMsg({ kind: 'err', text: t.empty });
+          return;
+        }
+        write(ref, slot, value.trim(), t.saved);
+      };
+
+      const clearField = (ref, slot) => {
         if (!creds || typeof creds.unset !== 'function') return;
         setBusy(slot);
         creds.unset(ref).then(
@@ -267,6 +333,30 @@ window.__ModuleLoader__.load({
             setMsg({ kind: 'err', text: (e && e.message) || t.clearFailed });
           },
         );
+      };
+
+      const saveProxy = () => {
+        const h1 = host.trim();
+        const p1 = port.trim();
+        if (!h1 || !p1) {
+          setMsg({ kind: 'err', text: t.proxyRequired });
+          return;
+        }
+        if (!/^\d+$/.test(p1) || Number(p1) < 1 || Number(p1) > 65535) {
+          setMsg({ kind: 'err', text: t.portInvalid });
+          return;
+        }
+        write(REF_PROXY, 'proxy', 'http://' + h1 + ':' + p1, t.saved);
+      };
+
+      const toggleProxy = () => {
+        if (proxyOn) {
+          setProxyOn(false);
+          clearField(REF_PROXY, 'proxy');
+        } else {
+          setProxyOn(true);
+          setMsg(null);
+        }
       };
 
       const open = () => {
@@ -296,48 +386,10 @@ window.__ModuleLoader__.load({
       const statusDot = (on) =>
         h('span', { style: s.status }, h('span', { style: s.dot(on) }), on ? t.configured : t.notSet);
 
-      const field = (opts) =>
-        h(
-          'div',
-          { style: s.row },
-          h('input', {
-            type: opts.secret ? 'password' : 'text',
-            autoComplete: 'off',
-            spellCheck: false,
-            'aria-label': opts.label,
-            placeholder: opts.placeholder,
-            value: opts.value,
-            onChange: (e) => setValues((prev) => ({ ...prev, [opts.slot]: e.target.value })),
-            onKeyDown: (e) => {
-              if (e.key === 'Enter') save(opts.ref, opts.slot, opts.value);
-            },
-            style: s.input,
-          }),
-          h(
-            'button',
-            {
-              type: 'button',
-              disabled: busy === opts.slot,
-              onClick: () => save(opts.ref, opts.slot, opts.value),
-              style: s.btn(true),
-            },
-            busy === opts.slot ? t.saving : t.save,
-          ),
-          opts.configured
-            ? h(
-                'button',
-                {
-                  type: 'button',
-                  disabled: busy === opts.slot,
-                  onClick: () => clear(opts.ref, opts.slot),
-                  style: s.btn(false),
-                },
-                t.clear,
-              )
-            : null,
-        );
-
       const isKey = tab === 'key';
+      const slot = isKey ? 'key' : 'oauth';
+      const value = isKey ? values.key : values.oauth;
+      const configured = isKey ? state.key : state.oauth;
 
       return h(
         'div',
@@ -377,23 +429,53 @@ window.__ModuleLoader__.load({
               t.oauthTab,
             ),
           ),
-          statusDot(isKey ? state.key : state.oauth),
+          statusDot(configured),
         ),
-        field({
-          slot: isKey ? 'key' : 'oauth',
-          ref: isKey ? REF_KEY : REF_TOKEN,
-          label: isKey ? t.apiKeyTab : t.oauthTab,
-          secret: true,
-          placeholder: isKey
-            ? state.key
-              ? t.replaceKey
-              : t.pasteKey
-            : state.oauth
-              ? t.replaceToken
-              : t.pasteToken,
-          value: isKey ? values.key : values.oauth,
-          configured: isKey ? state.key : state.oauth,
-        }),
+        h(
+          'div',
+          { style: s.row },
+          h('input', {
+            type: 'password',
+            autoComplete: 'off',
+            spellCheck: false,
+            'aria-label': isKey ? t.apiKeyTab : t.oauthTab,
+            placeholder: isKey
+              ? state.key
+                ? t.replaceKey
+                : t.pasteKey
+              : state.oauth
+                ? t.replaceToken
+                : t.pasteToken,
+            value,
+            onChange: (e) => setValues((prev) => ({ ...prev, [slot]: e.target.value })),
+            onKeyDown: (e) => {
+              if (e.key === 'Enter') saveField(isKey ? REF_KEY : REF_TOKEN, slot, value);
+            },
+            style: s.input,
+          }),
+          h(
+            'button',
+            {
+              type: 'button',
+              disabled: busy === slot,
+              onClick: () => saveField(isKey ? REF_KEY : REF_TOKEN, slot, value),
+              style: s.btn(true),
+            },
+            busy === slot ? t.saving : t.save,
+          ),
+          configured
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  disabled: busy === slot,
+                  onClick: () => clearField(isKey ? REF_KEY : REF_TOKEN, slot),
+                  style: s.btn(false),
+                },
+                t.clear,
+              )
+            : null,
+        ),
         h(
           'div',
           { style: s.actions },
@@ -408,16 +490,58 @@ window.__ModuleLoader__.load({
               ),
         ),
         h('div', { style: s.divider }),
-        h('div', { style: s.row }, h('span', { style: s.label }, t.proxyLabel), statusDot(state.proxy)),
-        field({
-          slot: 'proxy',
-          ref: REF_PROXY,
-          label: t.proxyLabel,
-          secret: false,
-          placeholder: t.pasteProxy,
-          value: values.proxy,
-          configured: state.proxy,
-        }),
+        h(
+          'div',
+          { style: s.row },
+          h('span', { style: s.sectionTitle }, t.proxyUse),
+          h(Switch, { on: proxyOn, onToggle: toggleProxy, label: t.proxyTitle }),
+          h('span', { style: { fontSize: 12, opacity: 0.65 } }, proxyOn ? t.proxyOn : t.proxyOff),
+          statusDot(state.proxy),
+        ),
+        proxyOn
+          ? h(
+              'div',
+              { style: { display: 'flex', alignItems: 'flex-end', gap: 8 } },
+              h(
+                'div',
+                { style: { flex: 1, minWidth: 0 } },
+                h('label', { style: s.fieldLabel }, t.hostLabel),
+                h('input', {
+                  type: 'text',
+                  autoComplete: 'off',
+                  spellCheck: false,
+                  'aria-label': t.hostLabel,
+                  value: host,
+                  onChange: (e) => setHost(e.target.value),
+                  onKeyDown: (e) => {
+                    if (e.key === 'Enter') saveProxy();
+                  },
+                  style: { ...s.input, height: 32 },
+                }),
+              ),
+              h(
+                'div',
+                { style: { flex: '0 0 auto' } },
+                h('label', { style: s.fieldLabel }, t.portLabel),
+                h('input', {
+                  type: 'text',
+                  inputMode: 'numeric',
+                  'aria-label': t.portLabel,
+                  value: port,
+                  onChange: (e) => setPort(e.target.value),
+                  onKeyDown: (e) => {
+                    if (e.key === 'Enter') saveProxy();
+                  },
+                  style: { ...s.numInput, width: 96 },
+                }),
+              ),
+              h(
+                'button',
+                { type: 'button', disabled: busy === 'proxy', onClick: saveProxy, style: s.btn(true) },
+                busy === 'proxy' ? t.saving : t.save,
+              ),
+            )
+          : null,
         msg ? h('div', { style: msg.kind === 'ok' ? s.ok : s.err }, msg.text) : null,
         h('div', { style: s.foot }, t.restart),
       );
