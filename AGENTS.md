@@ -17,10 +17,10 @@ local relay; nothing in this tree does that any more, and nothing should reintro
 card  (client.js, slot `plugins.bundle.config`)
   │   credentials service: set / describe / unset  (write-only from the UI)
   ▼
-Host half  (index.js)
+Host half  (index.js + proxy.js)
   ├─→ $DSH_HOME/dsh-runtimes/stitch-mcp/config.json   0600, the only source of truth
   ├─→ $DSH_HOME/dsh-runtimes/stitch-mcp/status.json   self-check result
-  ├─→ $DSH_HOME/.env                                  managed HTTPS_PROXY block
+  ├─→ undici global dispatcher                        Stitch origin only, while the switch is on
   └─→ pluginManager.reload(['stitch-mcp'])            re-compose the row after a save
         ▼
 @deepseek-ai/dsh-mcp-client  (streamable-http)  ──https──→  stitch.googleapis.com/mcp
@@ -31,7 +31,8 @@ Host half  (index.js)
 | File | Role |
 | :-- | :-- |
 | `cordis.patch.yml` | Inserts the Host entry, then the `@deepseek-ai/dsh-mcp-client` row (`streamable-http`, credential headers, `reconnect`) |
-| `index.js` | Host half: resolves credentials, keeps `config.json` / `status.json` / `plugin.log`, manages the proxy block in `$DSH_HOME/.env`, reloads the MCP row on a change |
+| `index.js` | Host half: resolves credentials, keeps `config.json` / `status.json` / `plugin.log`, installs the proxy wrapper, reloads the MCP row on a change |
+| `proxy.js` | Per-origin dispatcher wrapper: routes the Stitch origin through the card's proxy and hands every other request to the dispatcher that was there before |
 | `client.js` | Client half: the credential card (API Key / OAuth tabs, proxy switch, `I18N` dictionaries) |
 | `locale/{en,zh}.json` | Plugin title and description shown before activation |
 | `package.json` | Manifest: `dsh.bundle.patch`, `dsh.client`, and the `files` allowlist for npm |
@@ -44,9 +45,9 @@ Runtime files (created on demand, **not** part of the repository):
 | Path | Meaning |
 | :-- | :-- |
 | `dsh-runtimes/stitch-mcp/config.json` | `apiKey` / `accessToken` / `projectId` / `proxy`, mode `0600` |
-| `dsh-runtimes/stitch-mcp/status.json` | `ok`, `endpoint`, `credential`, `proxy`, `reachable`, `tools`, `error`, `checkedAt`, and `reload` (`{reloaded, reason}`) whenever the config file changed |
-| `dsh-runtimes/stitch-mcp/plugin.log` | One line per config write / proxy write / row reload |
-| `.env` | Optional block, delimited by `# >>> dsh-stitch-mcp proxy (managed; restart the harness to apply)` and `# <<< dsh-stitch-mcp proxy` |
+| `dsh-runtimes/stitch-mcp/status.json` | `ok`, `endpoint`, `credential`, `proxy`, `route` (`proxy` / `direct`), `proxyError`, `reachable`, `tools`, `error`, `checkedAt`, and `reload` (`{reloaded, reason}`) whenever the config file changed |
+| `dsh-runtimes/stitch-mcp/plugin.log` | One line per config write / proxy route / row reload |
+| `.env` | Nothing is written here any more. A block between `# >>> dsh-stitch-mcp proxy …` and `# <<< dsh-stitch-mcp proxy` left by 0.6.0 is deleted on activation |
 
 Upgrades leave debris in that runtime directory: a `relay.log`, and a detached relay
 process from 0.5.x that still idles on `127.0.0.1:7788` (installing 0.6.0 does not stop
@@ -70,12 +71,19 @@ delete the files and kill the process (or reboot) to reclaim the port. Never del
    answers the probe with a JSON-RPC "method not supported" at HTTP 200, so the client
    falls back to the classic handshake and lists the 16 tools even before a credential
    exists. Do not put anything on that path that can answer 5xx.
-5. **The plugin does not route traffic.** The harness installs one outbound proxy policy
-   per process (`HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY`, exported or in
-   `$DSH_HOME/.env`) and every `fetch` follows it, this transport included. The card's
-   switch only writes that block — which is why a proxy change needs a harness restart
-   while a credential change does not.
-6. **Keep the two rows in `cordis.patch.yml` in order.** The Host half is what writes
+5. **The plugin routes exactly one origin, and only when asked.** The harness installs one
+   outbound proxy policy per process (`HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY`, exported
+   or in `$DSH_HOME/.env`) on undici's global dispatcher, and every `fetch` follows it, this
+   transport included. That policy is process-wide by design, so it cannot express "proxy
+   this one endpoint". The card's switch therefore wraps the same dispatcher: with an
+   address stored, a request whose origin is `stitch.googleapis.com` takes a `ProxyAgent`
+   and everything else is dispatched unchanged; with nothing stored, the wrapper is removed
+   and the harness policy is back in charge for every origin. Wrapping in-process — rather
+   than writing env — is what makes a switch flip apply without a restart.
+6. **`undici` is a real dependency.** The wrapper needs `ProxyAgent`, so the profile has to
+   resolve the package for the switch to do anything. When it cannot, the switch stays inert
+   and `status.json` says so, instead of the bundle failing to activate.
+7. **Keep the two rows in `cordis.patch.yml` in order.** The Host half is what writes
    `config.json`, so it must be inserted before the MCP row that reads it.
 
 ## 2. Local test loop
@@ -105,7 +113,7 @@ file → **call a real tool**.
    hard-linked into the package store, so `rm` first, then `cp`:
 
    ```bash
-   for f in index.js client.js cordis.patch.yml; do
+   for f in index.js proxy.js client.js cordis.patch.yml; do
      rm -f "<profile>/node_modules/dsh-stitch-mcp/$f"
      cp "$f" "<profile>/node_modules/dsh-stitch-mcp/$f"
    done
@@ -128,10 +136,10 @@ file → **call a real tool**.
 | :-- | :-- |
 | `ok: true, tools: 16` | Healthy |
 | `credential: null` | Nothing resolved at all — no card value, no credentials file, no environment variable, no previous `config.json` |
-| `reachable: false`, `error: "UND_ERR_CONNECT_TIMEOUT"` / `"fetch failed"` | No route to the endpoint: give the process a proxy, then restart |
+| `reachable: false`, `error: "UND_ERR_CONNECT_TIMEOUT"` / `"fetch failed"` | No route to the endpoint: turn the card's proxy on, or give the process one through `HTTPS_PROXY` and restart |
 | `error: "HTTP 4xx/5xx"` | The endpoint answered and rejected the handshake |
 | file missing | The Host half never activated (bundle disabled, or the reload failed) |
-| a `route` field instead of `endpoint` | Written by a pre-0.6.0 build: the old code is still loaded, restart |
+| `route: "proxy"` / `"direct"` | Which route the probe actually took. `proxyError` explains a switch that could not be honoured (`undici` missing from the profile, address rejected) |
 
 Registered tools can also be inspected from the harness itself
 (`cordis_inspect_query(platform="host", provider="Tool", method="listTools")`, then look
@@ -157,7 +165,7 @@ for `mcp__stitch__*`) — faster than asking the user what they can see.
 | `reconnect.maxAttempts` | One-way: a row that gave up stays dead. A credential save (or a harness restart) re-arms it |
 | `settings.section` for the card | Breaks harness startup — the card belongs in `plugins.bundle.config` |
 | Overwriting an installed copy | `rm` before `cp`; `pnpm` hard-links into the store, so a plain `cp` writes through it |
-| Proxy switch "does nothing" | The block lands in `$DSH_HOME/.env`, which is read at launch. Restart, then check the file |
+| Proxy switch "does nothing" | It routes only the Stitch origin, in the running process. Read `status.json` → `route` / `proxyError`; an unresolvable `undici` leaves the switch inert instead of breaking the bundle |
 | Deleting `config.json` to "reset" | Loses the stored setup; clear the field in the card instead, which unsets the credential properly |
 | Reinstalling over a `link:` dependency | Can damage a source checkout; install from a tarball or the registry |
 
@@ -170,7 +178,9 @@ for `mcp__stitch__*`) — faster than asking the user what they can see.
   the harness; do not introduce custom typography.
 - The credential tab is always labelled **API Key**, never abbreviated.
 - A network with no proxy must work with **zero configuration**; the proxy is opt-in, and
-  both host and port are required when it is on.
+  both host and port are required when it is on. The switch is the only valve: the plugin
+  never exports proxy variables and never touches another origin's route, and with the
+  switch off the harness policy alone decides.
 - `projectId` has no card field today. It is resolved from `STITCH_PROJECT_ID` through the
   usual chain (credentials service → `$DSH_HOME/.credentials.yaml` → environment →
   previous `config.json`) and sent as `X-Goog-User-Project`.

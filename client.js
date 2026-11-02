@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
         proxyUse: 'Use a proxy',
         proxyOn: 'On',
         proxyOff: 'Off',
-        proxyHint: 'Off: direct, no configuration needed. On: this address is written to ~/.dsh/.env as HTTPS_PROXY for the whole harness.',
+        proxyHint: 'On: only the Stitch requests of this plugin use the address, applied within seconds. Off: this plugin adds no proxy — direct, or whatever HTTPS_PROXY the harness already has.',
         hostLabel: 'Proxy IP address',
         portLabel: 'Port',
         pasteKey: 'Paste API Key',
@@ -39,7 +39,7 @@ window.__ModuleLoader__.load({
         clear: 'Clear',
         configured: 'Configured',
         notSet: 'Not set',
-        restart: 'A saved credential reloads the connection on its own; a proxy applies after restarting the harness.',
+        restart: 'Saved credentials reload the connection on their own; the proxy switch applies within seconds — no restart.',
         empty: 'Value is empty.',
         proxyRequired: 'Host and port are required.',
         portInvalid: 'Port must be a number between 1 and 65535.',
@@ -61,7 +61,7 @@ window.__ModuleLoader__.load({
         proxyUse: '使用代理服务器',
         proxyOn: '开',
         proxyOff: '关',
-        proxyHint: '关：直连，不需要任何配置。开：该地址会写入 ~/.dsh/.env 的 HTTPS_PROXY，对整个 Harness 生效。',
+        proxyHint: '开：只有 Stitch 的请求走这个地址，几秒内生效。关：本插件不额外加代理——直连，或按环境里已有的 HTTPS_PROXY。',
         hostLabel: '代理 IP 地址',
         portLabel: '端口',
         pasteKey: '粘贴 API Key',
@@ -76,7 +76,7 @@ window.__ModuleLoader__.load({
         clear: '清除',
         configured: '已配置',
         notSet: '未配置',
-        restart: '凭据保存后自动重载连接；代理需重启 Harness 后生效。',
+        restart: '凭据保存后自动重载连接；代理开关几秒内生效，无需重启。',
         empty: '内容为空。',
         proxyRequired: '服务器和端口都不能为空。',
         portInvalid: '端口需为 1–65535 的数字。',
@@ -338,28 +338,38 @@ window.__ModuleLoader__.load({
         );
       };
 
-      const saveProxy = () => {
-        const h1 = host.trim();
-        const p1 = port.trim();
-        if (!h1 || !p1) {
+      // The switch is the valve: turning it on saves the address in the same action, and
+      // turning it off unsets it. There is no "on but not saved" state to get stuck in.
+      const proxyAddress = () => {
+        const hostValue = host.trim();
+        const portValue = port.trim();
+        if (!hostValue || !portValue) {
           setMsg({ kind: 'err', text: t.proxyRequired });
-          return;
+          return null;
         }
-        if (!/^\d+$/.test(p1) || Number(p1) < 1 || Number(p1) > 65535) {
+        if (!/^\d+$/.test(portValue) || Number(portValue) < 1 || Number(portValue) > 65535) {
           setMsg({ kind: 'err', text: t.portInvalid });
-          return;
+          return null;
         }
-        write(REF_PROXY, 'proxy', 'http://' + h1 + ':' + p1, t.saved);
+        return 'http://' + hostValue + ':' + portValue;
+      };
+
+      const saveProxy = () => {
+        const address = proxyAddress();
+        if (address === null) return;
+        write(REF_PROXY, 'proxy', address, t.saved);
       };
 
       const toggleProxy = () => {
         if (proxyOn) {
           setProxyOn(false);
           clearField(REF_PROXY, 'proxy');
-        } else {
-          setProxyOn(true);
-          setMsg(null);
+          return;
         }
+        const address = proxyAddress();
+        if (address === null) return;
+        // `write` flips the switch on only after the service confirms the save.
+        write(REF_PROXY, 'proxy', address, t.saved);
       };
 
       const open = () => {

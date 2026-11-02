@@ -1,4 +1,4 @@
-// Google Stitch as an MCP server for DeepSeek Harness — no helper process.
+// Google Stitch as an MCP server for DeepSeek Harness — no helper process, no relay.
 //
 // Stitch is a *remote* MCP endpoint, documented as:
 //
@@ -8,11 +8,14 @@
 // The row below speaks to it directly, which is the whole point:
 //
 // * overseas users need nothing: the endpoint is reached directly;
-// * a proxied network is covered by the harness itself — the `dsh` launcher
-//   installs one outbound proxy policy for the process (`HTTPS_PROXY`, `ALL_PROXY`,
-//   or `$DSH_HOME/.env`), and every `fetch` in the process, including this MCP
-//   transport, follows it. The Host half writes the address from the card into
-//   `$DSH_HOME/.env`, so the plugin never has to route anything by itself;
+// * a proxied network is the user's own choice. The card's switch is the only valve.
+//   When it is on, this Host half puts one wrapper in front of undici's global
+//   dispatcher (see `proxy.js`) and routes *only* `stitch.googleapis.com` through the
+//   address the card stored; when it is off, none of our code is in the path and the
+//   harness policy (an exported `HTTPS_PROXY` / `ALL_PROXY` or one in `$DSH_HOME/.env`)
+//   keeps deciding for every origin, this endpoint included. The wrapper lives in the
+//   running process, so a switch flip applies on the next poll instead of at the next
+//   launch, and nothing is written to `$DSH_HOME/.env`;
 // * when nothing can reach the endpoint the row reports its own transport error
 //   instead of a fake connection, and `status.json` records which step failed.
 //
@@ -36,6 +39,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { createStitchRouter } from './proxy.js';
+
 const ENDPOINT = 'https://stitch.googleapis.com/mcp';
 const DSH_HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh');
 const RUNTIME_DIR = path.join(DSH_HOME, 'dsh-runtimes', 'stitch-mcp');
@@ -54,15 +59,23 @@ const FIELDS = {
   STITCH_PROJECT_ID: 'projectId',
   STITCH_HTTPS_PROXY: 'proxy',
 };
+// The block 0.6.x wrote into `$DSH_HOME/.env`. Nothing writes it any more; the markers
+// survive only so {@link removeLegacyProxyEnv} can find and delete it verbatim.
 const PROXY_BLOCK_START = '# >>> dsh-stitch-mcp proxy (managed; restart the harness to apply)';
 const PROXY_BLOCK_END = '# <<< dsh-stitch-mcp proxy';
 
 export async function apply(ctx) {
+  // 0.6.x routed through a process-wide block in `$DSH_HOME/.env`. The switch scopes the
+  // proxy to this endpoint now, so a leftover block would keep proxying everything else.
+  removeLegacyProxyEnv();
   const config = await resolveConfig(ctx);
   const changed = writeConfig(config);
-  writeProxyEnv(config);
+  const route = await applyProxyRoute(config.proxy);
   const status = await probe(config);
-  writeStatus({ ...status, reload: changed ? await reloadRow(ctx) : undefined });
+  writeStatus({ ...status, ...routeFields(route), reload: changed ? await reloadRow(ctx) : undefined });
+  ctx.effect(() => () => {
+    void uninstallProxyRoute();
+  });
   keepAlive(ctx);
 }
 
@@ -169,39 +182,129 @@ function writeConfig(config) {
 }
 
 /**
- * Put the card's proxy into `$DSH_HOME/.env`, which the launcher reads for its
- * outbound proxy policy. The harness applies env values at launch, so the file is
- * written immediately while the running process keeps its current routing; the
- * status file says so.
+ * Remove the block 0.6.x wrote into `$DSH_HOME/.env`, and nothing else.
+ *
+ * That block set `HTTPS_PROXY` for the whole harness, which is exactly the behaviour this
+ * release replaces: the switch must decide for the Stitch origin alone. The file belongs to
+ * the user, so only the two marker lines and what sits between them are dropped; a missing
+ * file, unreadable file or absent block is not an error.
  */
-function writeProxyEnv(config) {
-  const proxy = typeof config.proxy === 'string' ? config.proxy.trim() : '';
+function removeLegacyProxyEnv() {
   try {
-    let text = '';
-    try {
-      text = fs.readFileSync(ENV_FILE, 'utf8');
-    } catch {
-      // Created below.
-    }
-    const block = proxy
-      ? [PROXY_BLOCK_START, 'HTTPS_PROXY=' + proxy, 'HTTP_PROXY=' + proxy, PROXY_BLOCK_END].join('\n')
-      : '';
-    const pattern = new RegExp(
-      '(?:^|\\n)' + escapeRegExp(PROXY_BLOCK_START) + '[\\s\\S]*?' + escapeRegExp(PROXY_BLOCK_END) + '\\n?',
-    );
-    const stripped = text.replace(pattern, '\n').replace(/\n{3,}/g, '\n\n').trim();
-    const next = [stripped, block].filter(Boolean).join('\n') + (stripped || block ? '\n' : '');
-    if (next === text) return;
-    fs.mkdirSync(path.dirname(ENV_FILE), { recursive: true });
+    const text = fs.readFileSync(ENV_FILE, 'utf8');
+    const lines = text.split(/\r?\n/);
+    const start = lines.indexOf(PROXY_BLOCK_START);
+    const end = lines.indexOf(PROXY_BLOCK_END);
+    if (start === -1 || end === -1 || end < start) return;
+    const kept = [...lines.slice(0, start), ...lines.slice(end + 1)];
+    const next = kept.join('\n').replace(/^(?:[ \t]*\n)+/, '');
     fs.writeFileSync(ENV_FILE, next);
-    log(proxy ? 'wrote HTTPS_PROXY to ' + ENV_FILE : 'removed the Stitch proxy block from ' + ENV_FILE);
-  } catch (error) {
-    log('could not update ' + ENV_FILE + ': ' + (error?.message || String(error)));
+    log('removed the legacy process-wide proxy block from ' + ENV_FILE);
+  } catch {
+    // No `.env`, no block, or a read-only home: nothing to migrate.
   }
 }
 
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * The wrapper currently installed, if any: `{ dispatcher, setProxy, close, previous }`.
+ * Kept module-wide because the dispatcher outlives one `apply()` call and has to be
+ * restored when the bundle is disabled.
+ */
+let router;
+
+/** The undici module, once resolved; `null` marks a failure that is not retried. */
+let undici;
+let undiciUnavailable = false;
+
+/**
+ * Resolve `undici` lazily.
+ *
+ * The harness already routes every `fetch` through undici's global dispatcher, so the only
+ * thing this plugin needs from the package is `ProxyAgent` plus the two accessors. A profile
+ * where it cannot be resolved keeps working: the switch simply stays inert and
+ * `status.json` says why, instead of the bundle failing to activate.
+ */
+async function loadUndici() {
+  if (undici) return undici;
+  if (undiciUnavailable) return undefined;
+  try {
+    undici = await import('undici');
+    return undici;
+  } catch (error) {
+    undiciUnavailable = true;
+    log('undici is unavailable; the proxy switch stays inert: ' + (error?.message || String(error)));
+    return undefined;
+  }
+}
+
+/**
+ * Put the card's switch into effect.
+ *
+ * On: install the wrapper (once) and point it at `proxyUrl`. Off: restore the dispatcher
+ * that was in charge before us, so the harness policy decides for every origin again. The
+ * call is idempotent — the keep-alive poll runs it on every tick.
+ *
+ * @param {string} [proxyUrl] - the stored address; empty or missing means off.
+ * @returns {Promise<{applied: boolean, reason?: string}>} what the status file should say.
+ */
+async function applyProxyRoute(proxyUrl) {
+  const wanted = typeof proxyUrl === 'string' ? proxyUrl.trim() : '';
+  const module = await loadUndici();
+  if (!module) return { applied: false, reason: 'undici unavailable' };
+
+  if (wanted === '') {
+    const stale = router;
+    router = undefined;
+    if (stale) {
+      if (module.getGlobalDispatcher() === stale.dispatcher) module.setGlobalDispatcher(stale.previous);
+      await stale.close();
+      log('proxy route removed; the previous dispatcher is back in charge');
+    }
+    return { applied: false };
+  }
+
+  if (!router || module.getGlobalDispatcher() !== router.dispatcher) {
+    // Nothing installed yet, or something replaced the global dispatcher after us. Wrap
+    // whatever is in charge now, so the chain below us stays reachable and the switch keeps
+    // working instead of silently pointing at a detached object.
+    const stale = router;
+    const previous = stale && module.getGlobalDispatcher() === stale.dispatcher ? stale.previous : module.getGlobalDispatcher();
+    router = createStitchRouter({ previous, undici: module });
+    module.setGlobalDispatcher(router.dispatcher);
+    if (stale) await stale.close();
+    log('proxy route installed for the Stitch origin only');
+  }
+
+  try {
+    router.setProxy(wanted);
+  } catch (error) {
+    const reason = error?.message || String(error);
+    log('proxy address rejected: ' + reason);
+    return { applied: false, reason };
+  }
+  return { applied: true };
+}
+
+/** Undo {@link applyProxyRoute} — the bundle was disabled or reloaded away. */
+async function uninstallProxyRoute() {
+  const stale = router;
+  router = undefined;
+  if (!stale) return;
+  try {
+    if (undici && undici.getGlobalDispatcher() === stale.dispatcher) {
+      undici.setGlobalDispatcher(stale.previous);
+    }
+    await stale.close();
+  } catch (error) {
+    log('could not restore the previous dispatcher: ' + (error?.message || String(error)));
+  }
+}
+
+/** The status fields that describe where Stitch traffic actually went. */
+function routeFields(route) {
+  const fields = { route: route.applied ? 'proxy' : 'direct' };
+  if (route.reason) fields.proxyError = route.reason;
+  return fields;
 }
 
 /**
@@ -227,9 +330,10 @@ async function reloadRow(ctx) {
 }
 
 /**
- * Round-trip the endpoint the same way the MCP transport will — through the
- * harness's own outbound policy — so `status.json` can say whether the network
- * path, not just the credential, is in place.
+ * Round-trip the endpoint the same way the MCP transport will — through the global
+ * dispatcher, so the proxy wrapper installed by {@link applyProxyRoute} is on this path
+ * too — and let `status.json` say whether the network route, not just the credential,
+ * is in place.
  */
 async function probe(config) {
   const credential = config.accessToken ? 'access-token' : config.apiKey ? 'api-key' : null;
@@ -320,10 +424,10 @@ function keepAlive(ctx) {
       const first = fingerprint === '';
       fingerprint = next;
       const changed = writeConfig(config);
-      writeProxyEnv(config);
+      const route = await applyProxyRoute(config.proxy);
       if (first && !changed) return;
       const status = await probe(config);
-      writeStatus({ ...status, reload: changed ? await reloadRow(ctx) : undefined });
+      writeStatus({ ...status, ...routeFields(route), reload: changed ? await reloadRow(ctx) : undefined });
     } catch {
       // A probe failure is recorded by the next round.
     } finally {

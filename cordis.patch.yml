@@ -5,14 +5,15 @@
 #   { "type": "http", "url": "https://stitch.googleapis.com/mcp",
 #     "headers": { "X-Goog-Api-Key": "AQ...." } }
 #
-# The row talks to it directly. Nothing routes the traffic on the plugin's side:
+# The row talks to it directly. Nothing here routes the traffic:
 #
 # * direct is the default, so a network that reaches Google needs no configuration;
-# * a proxied network is covered by the harness itself — the launcher resolves one
-#   outbound policy from `HTTPS_PROXY` / `ALL_PROXY` / `$DSH_HOME/.env` and every
-#   `fetch` in the process follows it, this transport included. The Host half writes
-#   the address from the card into `$DSH_HOME/.env`, and the policy applies at the
-#   next launch;
+# * a proxied network is the user's own choice. The Host half wraps undici's global
+#   dispatcher (index.js + proxy.js) and routes *only* `stitch.googleapis.com` through
+#   the address the card stored; with the switch off, nothing of ours is in the path and
+#   the harness policy (`HTTPS_PROXY` / `ALL_PROXY`, exported or in `$DSH_HOME/.env`)
+#   decides for every origin, this one included. Nothing is written to `$DSH_HOME/.env`
+#   any more, and a switch flip applies in the running process;
 # * an unreachable endpoint stays an honest transport error instead of a fake
 #   connection, and `~/.dsh/dsh-runtimes/stitch-mcp/status.json` records the reason.
 #

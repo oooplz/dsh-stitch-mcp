@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The card's proxy switch now routes the traffic it was always meant to route: this
+plugin's Stitch requests, and nothing else.
+
+### Changed
+
+- The switch is the only valve, and it acts immediately. On: `stitch.googleapis.com`
+  goes through the stored address, while the model API, web search and every other MCP
+  server keep their own route. Off: the plugin is out of the path, so Stitch connects
+  directly or follows whatever `HTTPS_PROXY` / `ALL_PROXY` the harness already has.
+  There is no restart and no `$DSH_HOME/.env` write any more.
+- The switch saves its address in the same action, so "on" can no longer mean "on but
+  not applied".
+- `status.json` gains `route` (`proxy` / `direct`) and, when the switch could not be
+  honoured, `proxyError`.
+
+### Removed
+
+- The managed `HTTPS_PROXY` block in `$DSH_HOME/.env`. A block written by 0.6.0 is
+  deleted on activation; a stored proxy address keeps the switch on.
+
 ## [0.6.0] - 2026-11-02
 
 The helper process is gone: the MCP row talks to Google itself, and the harness owns

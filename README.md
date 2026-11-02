@@ -63,31 +63,28 @@ entry, so the new credential applies **without restarting the harness**.
 ## Endpoint and proxy
 
 **The default is a direct connection, and a network that reaches Google needs no
-configuration at all.** Proxy support is not implemented by this plugin: DeepSeek
-Harness resolves one outbound proxy policy for the whole process from `HTTPS_PROXY` /
-`HTTP_PROXY` / `ALL_PROXY` (exported, or listed in `~/.dsh/.env`), and every `fetch` in
-the process follows it — this MCP transport included.
+configuration at all.**
 
-The card's **Use a proxy** switch is therefore just a convenience: it writes
+The card's **Use a proxy** switch is the only valve. Switching it on stores
+`http://<ip>:<port>` and routes **only this plugin's Stitch requests** through it:
+everything else in the harness — the model API, web search, other MCP servers — keeps
+the route it already had. The change applies inside the running process within a few
+seconds, so there is no restart, and nothing is written to `~/.dsh/.env`.
 
-```dotenv
-# >>> dsh-stitch-mcp proxy (managed; restart the harness to apply)
-HTTPS_PROXY=http://127.0.0.1:7897
-HTTP_PROXY=http://127.0.0.1:7897
-# <<< dsh-stitch-mcp proxy
-```
+Switching it off stores nothing and takes the plugin out of the path again: Stitch then
+connects directly, or — when you exported `HTTPS_PROXY` / `ALL_PROXY` for the harness
+yourself — whatever that policy says. The harness resolves one outbound policy per
+process; with the switch off it is in charge for every origin, this one included.
 
-into `~/.dsh/.env` (other lines are preserved), so the next launch routes the whole
-harness through that proxy. Turning the switch off removes the block again. Because the
-launcher reads that file once at startup, a proxy change applies after a restart; a
-credential change does not.
+Upgrading from 0.6.0 removes the managed `HTTPS_PROXY` block that release wrote into
+`~/.dsh/.env`. A stored proxy address keeps the switch on.
 
 If nothing can reach the endpoint, nothing is faked: the MCP row reports its own
 transport error, and `~/.dsh/dsh-runtimes/stitch-mcp/status.json` says what failed:
 
 ```json
 { "ok": false, "endpoint": "https://stitch.googleapis.com/mcp",
-  "credential": "api-key", "proxy": null, "reachable": false,
+  "credential": "api-key", "proxy": null, "route": "direct", "reachable": false,
   "error": "UND_ERR_CONNECT_TIMEOUT", "checkedAt": "..." }
 ```
 
@@ -95,7 +92,7 @@ A healthy one looks like:
 
 ```json
 { "ok": true, "endpoint": "https://stitch.googleapis.com/mcp",
-  "credential": "api-key", "proxy": "http://127.0.0.1:7897",
+  "credential": "api-key", "proxy": "http://127.0.0.1:7897", "route": "proxy",
   "reachable": true, "tools": 16, "checkedAt": "..." }
 ```
 
@@ -106,7 +103,8 @@ A healthy one looks like:
 | `server is disconnected` | The transport cannot reach `stitch.googleapis.com` at all. `status.json` → `error` names the reason (`UND_ERR_CONNECT_TIMEOUT`, `fetch failed`, …). Give the process a proxy and restart. |
 | Tools listed, calls answer “Request is missing required authentication credential” | No credential saved yet — paste an API key in the card. The handshake itself needs no key, which is why the tools appear first. |
 | `status.json` says `credential: null` | The card has nothing stored; the host `credentials` service is unreachable. |
-| Proxy set but still unreachable | The proxy is written to `~/.dsh/.env`; restart the harness and check the block is there. |
+| Proxy on but still unreachable | Check the address in the card, then `status.json` → `proxyError` / `error`. Switching the proxy off hands Stitch back to the harness policy. |
+| `status.json` says `route: "direct"` with the switch on | `undici` could not be resolved in this profile, so the switch stays inert; `proxyError` says so. Reinstall the plugin. |
 | Row gave up after many attempts | The MCP client stops retrying permanently; saving a credential reloads the entry, and restarting the harness also re-arms it. |
 
 ## Layout
@@ -114,7 +112,8 @@ A healthy one looks like:
 | File | Role |
 | :-- | :-- |
 | `cordis.patch.yml` | Inserts the host entry and the `dsh-mcp-client` row (direct HTTPS transport, credential headers, reconnect) |
-| `index.js` | Host half: resolves credentials, keeps `config.json` / `status.json`, manages the proxy block in `~/.dsh/.env`, reloads the row on a credential change |
+| `index.js` | Host half: resolves credentials, keeps `config.json` / `status.json`, installs the per-origin proxy wrapper, reloads the row on a change |
+| `proxy.js` | Per-origin dispatcher wrapper: routes `stitch.googleapis.com` only, and only while the card's switch is on |
 | `client.js` | Client half: the credential card in `plugins.bundle.config`, with `I18N` dictionaries |
 | `locale/{en,zh}.json` | Plugin title and description per locale |
 | `CHANGELOG.md` | Release history |
