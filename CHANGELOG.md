@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.1] - 2026-11-02
 
 The card's proxy switch now routes the traffic it was always meant to route: this
 plugin's Stitch requests, and nothing else.
@@ -146,6 +146,7 @@ became an option instead of a requirement.
   host `credentials` service.
 - Display metadata (locale title/description, icon).
 
+[0.6.1]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.4.6...v0.5.0
 [0.4.6]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.4.3...v0.4.6

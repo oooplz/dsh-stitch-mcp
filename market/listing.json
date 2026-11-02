@@ -3,9 +3,9 @@
   "type": "bundle",
   "name": "Google Stitch MCP",
   "repo": "oooplz/dsh-stitch-mcp",
-  "spec": "dsh-stitch-mcp@0.6.0",
+  "spec": "dsh-stitch-mcp@0.6.1",
   "package": "dsh-stitch-mcp",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Google Stitch as native mcp__stitch__* tools in DeepSeek Harness: a direct remote MCP connection with an in-panel credential card for the API Key and OAuth access token.",
   "longDescription": "Connects DeepSeek Harness to the official Stitch MCP endpoint (`https://stitch.googleapis.com/mcp`, Streamable HTTP) and registers its toolkit as `mcp__stitch__*`:\\n\\n- `list_projects` / `get_project` / `create_project` / `delete_project`\\n- `list_screens` / `get_screen` / `download_file`\\n- `generate_screen_from_text` / `edit_screens` / `generate_variants`\\n- `list_design_systems` / `create_design_system` / `create_design_system_from_design_md` / `update_design_system` / `apply_design_system`\\n- `upload_design_md`\\n\\nThe connection is direct: no helper process, no local port, no launcher script. A network that reaches Google needs no configuration at all, and a proxied network is covered by the harness itself — `HTTPS_PROXY` / `ALL_PROXY` (exported or in `~/.dsh/.env`) applies to every request, this transport included. The card's proxy switch just writes that block into `~/.dsh/.env` for the next launch.\\n\\nThe credential card has two tabs. **API Key** stores the documented `X-Goog-Api-Key`; **OAuth** stores an access token sent as `Authorization: Bearer`, optionally pinned with `X-Goog-User-Project`. Values go through the host `credentials` service (write-only, never read back); saving reloads the MCP entry, so a new credential applies without restarting the harness. The handshake itself needs no key, so the 16 tools are listed as soon as the plugin is installed.\\n\\nDiagnostics live in `~/.dsh/dsh-runtimes/stitch-mcp/status.json`: endpoint, credential, proxy, reachability and the last error.",
   "tags": [
