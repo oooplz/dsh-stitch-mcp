@@ -9,9 +9,6 @@ window.__ModuleLoader__.load({
     const REF_TOKEN = 'STITCH_ACCESS_TOKEN';
     const REF_PROXY = 'STITCH_HTTPS_PROXY';
     const SETTINGS_URL = 'https://stitch.withgoogle.com/settings';
-    // Prefilled in the Proxy tab so nobody has to type a local proxy address; it is
-    // only stored once the user presses Save.
-    const DEFAULT_PROXY = 'http://127.0.0.1:7897';
     const LOGIN_COMMAND =
       'node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login';
 
@@ -24,10 +21,9 @@ window.__ModuleLoader__.load({
         proxyTab: 'Proxy',
         pasteKey: 'Paste API Key',
         pasteToken: 'Paste AccessToken',
-        pasteProxy: 'http://127.0.0.1:7897',
+        pasteProxy: 'Enter a local proxy, e.g. http://127.0.0.1:7897',
         replaceKey: 'Replace API Key',
         replaceToken: 'Replace AccessToken',
-        replaceProxy: 'Replace proxy URL',
         createKey: 'Create API Key',
         copyCommand: 'Copy login command',
         openSettings: 'Open settings',
@@ -55,10 +51,9 @@ window.__ModuleLoader__.load({
         proxyTab: '代理',
         pasteKey: '粘贴 API Key',
         pasteToken: '粘贴 AccessToken',
-        pasteProxy: 'http://127.0.0.1:7897',
+        pasteProxy: '请输入本机代理，如 http://127.0.0.1:7897',
         replaceKey: '替换 API Key',
         replaceToken: '替换 AccessToken',
-        replaceProxy: '替换代理地址',
         createKey: '创建 API Key',
         copyCommand: '复制登录命令',
         openSettings: '打开设置页',
@@ -193,7 +188,7 @@ window.__ModuleLoader__.load({
       const creds = props.creds;
       const t = props.t;
       const [tab, setTab] = React.useState('key');
-      const [values, setValues] = React.useState({ key: '', token: '', proxy: DEFAULT_PROXY });
+      const [values, setValues] = React.useState({ key: '', token: '', proxy: '' });
       const [state, setState] = React.useState({ key: false, token: false, proxy: false });
       const [busy, setBusy] = React.useState(null);
       const [msg, setMsg] = React.useState(null);
@@ -235,7 +230,7 @@ window.__ModuleLoader__.load({
             setBusy(null);
             if (res && res.ok === true) {
               setMsg({ kind: 'ok', text: t.saved });
-              setValues((prev) => ({ ...prev, [slot]: slot === 'proxy' ? DEFAULT_PROXY : '' }));
+              setValues((prev) => ({ ...prev, [slot]: '' }));
               describe();
             } else {
               setMsg({ kind: 'err', text: (res && res.error && res.error.message) || t.saveFailed });
@@ -301,9 +296,12 @@ window.__ModuleLoader__.load({
       const value = values[current.id];
       const configured = state[current.id];
 
-      const placeholder = configured
-        ? { key: t.replaceKey, oauth: t.replaceToken, proxy: t.replaceProxy }[current.id]
-        : { key: t.pasteKey, oauth: t.pasteToken, proxy: t.pasteProxy }[current.id];
+      const placeholder =
+        current.id === 'proxy'
+          ? t.pasteProxy
+          : configured
+            ? { key: t.replaceKey, oauth: t.replaceToken }[current.id]
+            : { key: t.pasteKey, oauth: t.pasteToken }[current.id];
 
       return h(
         'div',
