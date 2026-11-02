@@ -56,3 +56,12 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 - One runtime file describes the setup: `~/.dsh/dsh-runtimes/stitch-mcp/config.json`.
   The proxy launchers in `scripts/` are no longer needed for Stitch.
+
+### Changed (routing)
+- A machine without a proxy no longer needs any configuration: the relay tries the
+  direct route first and falls back to a proxy it finds on the machine —
+  `HTTP(S)_PROXY` / `ALL_PROXY`, the Windows system proxy when enabled, or the usual
+  local ports of a proxy client. A configured proxy is tried first, with the direct
+  route as a fallback, and the working route is remembered for five minutes.
+- Turning the proxy switch off now really means "no proxy configured": the value
+  kept in `config.json` is no longer inherited.

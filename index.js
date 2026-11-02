@@ -58,6 +58,9 @@ async function resolveConfig(ctx) {
   const previous = readJson(CONFIG_FILE);
   const service = safeGet(ctx, 'credentials');
   const stored = readCredentialsFile();
+  // Turning the proxy switch off clears the stored reference, so the value kept in
+  // config.json must not be inherited again; the relay then goes direct.
+  const proxyDisabled = (await proxyConfigured(service)) === false;
   const resolved = {};
 
   for (const [ref, key] of Object.entries(FIELDS)) {
@@ -65,7 +68,7 @@ async function resolveConfig(ctx) {
       async () => (service ? await readService(service, ref) : undefined),
       () => stored[ref],
       () => process.env[ref],
-      () => previous[key],
+      () => (proxyDisabled && key === 'proxy' ? undefined : previous[key]),
     ];
     for (const candidate of candidates) {
       try {
@@ -85,6 +88,19 @@ async function resolveConfig(ctx) {
 async function readService(credentials, ref) {
   const result = await credentials.resolve(ref);
   return typeof result?.value === 'string' ? result.value : undefined;
+}
+
+/** Whether the stored proxy reference exists; undefined when it cannot be told. */
+async function proxyConfigured(service) {
+  if (!service || typeof service.describe !== 'function') return undefined;
+  try {
+    const result = await service.describe(['STITCH_HTTPS_PROXY']);
+    if (!result || result.ok !== true) return undefined;
+    const entry = (result.value || {})['STITCH_HTTPS_PROXY'];
+    return Boolean(entry && entry.configured === true);
+  } catch {
+    return undefined;
+  }
 }
 
 /** The credentials store is a small YAML document with a flat `refs:` map. */
@@ -190,6 +206,7 @@ async function probe(config) {
   const base = {
     credential: config.accessToken ? 'access-token' : config.apiKey ? 'api-key' : null,
     proxy: config.proxy || null,
+    route: (await health())?.route ?? null,
     checkedAt: new Date().toISOString(),
   };
   if (!base.credential) return { ok: false, ...base, error: 'no credential configured' };
