@@ -49,17 +49,29 @@ complete the prerequisites below.
 
 ## Credentials: API Key vs OAuth
 
-The plugin page shows an **Auth guide** card that explains both paths. Neither is stored by
-this plugin; both are owned by the official CLI.
+The plugin page (**Settings → Plugins → Google Stitch**) renders a **credential card** with two
+tabs:
+
+- **API Key** — paste the key and press 保存. It is stored through the Host `credentials`
+  service (`ctx.remote.credentials.set`) under the reference `STITCH_API_KEY`. The store is
+  write-only: the UI never reads the secret back, only whether it is configured.
+- **OAuth** — 打开浏览器授权 opens the Stitch site in a new tab; paste the resulting access
+  token to store it under `STITCH_ACCESS_TOKEN`. The card also shows the CLI login command,
+  which stores and refreshes OAuth tokens locally.
+
+How it reaches the MCP server: the Host half (`index.js`) resolves those references at
+activation and republishes them into `process.env`; the `stitch-mcp` row's `!!js` expressions
+read `process.env` and pass the values to the CLI child. **Restart the harness after saving**
+so the MCP child is respawned with the new credentials.
 
 | | API Key | OAuth (`stitch login`) |
 | :-- | :-- | :-- |
-| Setup | `STITCH_API_KEY=…` before launching the harness | browser sign-in, tokens stored and refreshed by the CLI |
+| Setup | card → API Key tab, or `STITCH_API_KEY=…` | card → OAuth tab, or `stitch login` |
 | Covers | Canvas resources: projects, screens, design systems | workspaces, priorities, insights, solutions |
 | Best for | automation, unattended machines | interactive use |
 
 ```bash
-# OAuth
+# OAuth via CLI (stores and refreshes tokens locally)
 node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login
 ```
 

@@ -1,7 +1,7 @@
 {
   "name": "@local/dsh-stitch-mcp",
-  "version": "1.0.1",
-  "description": "Google Stitch as native mcp__stitch__* tools in DeepSeek Harness, with an in-panel guide for choosing API Key vs OAuth.",
+  "version": "1.2.0",
+  "description": "Google Stitch as native mcp__stitch__* tools in DeepSeek Harness, with an in-panel credential card for API Key and OAuth.",
   "type": "module",
   "keywords": [
     "dsh",
@@ -35,7 +35,8 @@
       "platform": "web",
       "immediately": true,
       "inject": [
-        "@deepseek-ai/dsh-client-ui-plugin-manager"
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-api-remotes"
       ]
     }
   }

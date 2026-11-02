@@ -6,161 +6,314 @@ window.__ModuleLoader__.load({
 
     const NS = '@local/dsh-stitch-mcp';
 
-    // The two credential paths the official Stitch CLI accepts. `stitch login`
-    // stores OAuth tokens in the CLI's own store and refreshes them; the API key
-    // is required in addition for Canvas resources (projects/screens/design systems).
-    const MODES = {
-      'api-key': {
-        title: 'API Key',
-        body: 'Canvas 资源（项目 / 界面 / 设计系统）需要 API Key；它与 Google 登录是两套凭据。',
-        command: 'export STITCH_API_KEY=your-api-key',
+    // Credential references, resolved by the Host `credentials` service. The Host
+    // half reads them at activation and republishes them into process.env so the
+    // MCP row's `!!js` expressions can hand them to the CLI.
+    const REF_KEY = 'STITCH_API_KEY';
+    const REF_TOKEN = 'STITCH_ACCESS_TOKEN';
+
+    const STITCH_HOME = 'https://stitch.withgoogle.com';
+
+    const s = {
+      card: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        padding: '14px 16px',
+        border: '1px solid var(--dsw-alias-border-l1)',
+        borderRadius: 10,
+        fontSize: 13,
+        lineHeight: 1.5,
       },
-      oauth: {
-        title: 'OAuth（stitch login）',
-        body: '浏览器完成 Google 登录，令牌由 CLI 本地保存并自动刷新；工作区 / 洞察 / 解决方案可用，Canvas 仍需 API Key。',
-        command:
-          'node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login',
+      tabs: { display: 'flex', gap: 6 },
+      tab: (active) => ({
+        padding: '5px 12px',
+        fontSize: 12,
+        borderRadius: 999,
+        cursor: 'pointer',
+        border: '1px solid var(--dsw-alias-border-l1)',
+        background: active ? 'var(--dsw-alias-state-business-primary)' : 'transparent',
+        color: active ? '#fff' : 'inherit',
+      }),
+      row: { display: 'flex', gap: 8, alignItems: 'center' },
+      input: {
+        flex: 1,
+        minWidth: 0,
+        padding: '6px 9px',
+        fontSize: 12,
+        borderRadius: 6,
+        border: '1px solid var(--dsw-alias-border-l1)',
+        background: 'var(--dsw-alias-bg-l2)',
+        color: 'inherit',
       },
+      btn: (primary) => ({
+        padding: '5px 12px',
+        fontSize: 12,
+        borderRadius: 6,
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+        border: '1px solid var(--dsw-alias-border-l1)',
+        background: primary ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-bg-l2)',
+        color: primary ? '#fff' : 'inherit',
+      }),
+      hint: { fontSize: 12, opacity: 0.72 },
+      ok: { fontSize: 12, color: 'var(--dsw-alias-state-business-primary)' },
+      err: { fontSize: 12, color: '#d14343' },
+      badge: (on) => ({
+        display: 'inline-block',
+        padding: '1px 7px',
+        borderRadius: 999,
+        fontSize: 11,
+        marginLeft: 6,
+        background: on ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-bg-l2)',
+        color: on ? '#fff' : 'inherit',
+        border: '1px solid var(--dsw-alias-border-l1)',
+      }),
     };
 
-    function useCopy() {
-      const [copied, setCopied] = React.useState(null);
-      const copy = (text, key) => {
-        const done = () => {
-          setCopied(key);
-          setTimeout(() => setCopied(null), 1500);
-        };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(done, () => setCopied('failed'));
-        } else {
-          setCopied('failed');
-        }
-      };
-      return [copied, copy];
-    }
-
-    function AuthGuide() {
+    function AuthCard(props) {
+      const creds = props.remote && props.remote.credentials;
       const [mode, setMode] = React.useState('api-key');
-      const [copied, copy] = useCopy();
-      const t = MODES[mode];
+      const [apiKey, setApiKey] = React.useState('');
+      const [token, setToken] = React.useState('');
+      const [state, setState] = React.useState({ key: false, token: false });
+      const [busy, setBusy] = React.useState(false);
+      const [msg, setMsg] = React.useState(null);
 
-      const card = (key, label, note) => {
-        const active = mode === key;
-        return h(
-          'label',
-          {
-            key,
-            style: {
-              display: 'flex',
-              gap: 10,
-              alignItems: 'flex-start',
-              padding: '10px 12px',
-              borderRadius: 8,
-              cursor: 'pointer',
-              border: '1px solid ' + (active ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-border-l1)'),
-              background: active ? 'var(--dsw-alias-bg-l2)' : 'transparent',
-            },
+      const refresh = React.useCallback(() => {
+        if (!creds || typeof creds.describe !== 'function') return;
+        creds.describe([REF_KEY, REF_TOKEN]).then(
+          (res) => {
+            if (!res || res.ok !== true) return;
+            const v = res.value || {};
+            setState({
+              key: Boolean(v[REF_KEY] && v[REF_KEY].configured === true),
+              token: Boolean(v[REF_TOKEN] && v[REF_TOKEN].configured === true),
+            });
           },
-          h('input', {
-            type: 'radio',
-            name: 'stitch-auth-mode',
-            checked: active,
-            onChange: () => setMode(key),
-            style: { marginTop: 3 },
-          }),
-          h(
-            'span',
-            null,
-            h('strong', { style: { display: 'block', fontSize: 13 } }, label),
-            h(
-              'span',
-              { style: { display: 'block', fontSize: 12, opacity: 0.75, marginTop: 2 } },
-              note,
-            ),
-          ),
+          () => {},
+        );
+      }, [creds]);
+
+      React.useEffect(() => {
+        refresh();
+      }, [refresh]);
+
+      const store = (ref, value, label) => {
+        if (!creds || typeof creds.set !== 'function') {
+          setMsg({ kind: 'err', text: '当前构建没有暴露 credentials 服务，无法保存。' });
+          return;
+        }
+        if (!value || value.trim().length === 0) {
+          setMsg({ kind: 'err', text: '内容为空，未保存。' });
+          return;
+        }
+        setBusy(true);
+        setMsg(null);
+        creds.set(ref, value.trim()).then(
+          (res) => {
+            setBusy(false);
+            if (res && res.ok === true) {
+              setMsg({ kind: 'ok', text: label + ' 已保存。重启 Harness 后生效。' });
+              if (ref === REF_KEY) setApiKey('');
+              else setToken('');
+              refresh();
+            } else {
+              setMsg({ kind: 'err', text: (res && res.error && res.error.message) || '保存失败。' });
+            }
+          },
+          (e) => {
+            setBusy(false);
+            setMsg({ kind: 'err', text: (e && e.message) || String(e) });
+          },
         );
       };
 
-      return h(
-        'div',
-        {
-          'data-stitch-auth-guide': true,
-          style: {
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-            padding: '12px 14px',
-            border: '1px solid var(--dsw-alias-border-l1)',
-            borderRadius: 10,
-            fontSize: 13,
-            lineHeight: 1.5,
+      const clear = (ref, label) => {
+        if (!creds || typeof creds.unset !== 'function') return;
+        setBusy(true);
+        creds.unset(ref).then(
+          (res) => {
+            setBusy(false);
+            setMsg(
+              res && res.ok === true
+                ? { kind: 'ok', text: label + ' 已清除。' }
+                : { kind: 'err', text: (res && res.error && res.error.message) || '清除失败。' },
+            );
+            refresh();
           },
-        },
-        h('div', { style: { fontWeight: 600 } }, 'Stitch 凭据方式'),
+          (e) => {
+            setBusy(false);
+            setMsg({ kind: 'err', text: (e && e.message) || String(e) });
+          },
+        );
+      };
+
+      const openBrowser = () => {
+        try {
+          const w = window.open(STITCH_HOME, '_blank', 'noopener');
+          if (!w) setMsg({ kind: 'err', text: '浏览器拦截了弹窗，请手动打开 ' + STITCH_HOME });
+          else setMsg({ kind: 'ok', text: '已在新标签打开 Stitch。' });
+        } catch (e) {
+          setMsg({ kind: 'err', text: '打开失败：' + ((e && e.message) || String(e)) });
+        }
+      };
+
+      const apiKeyPane = h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
         h(
           'div',
-          { style: { opacity: 0.75, fontSize: 12 } },
-          '两种方式可叠加使用。当前版本请在下方选择方式，并按提示在启动 Harness 之前设置。',
+          { style: { fontWeight: 600 } },
+          'API Key',
+          h('span', { style: s.badge(state.key) }, state.key ? '已配置' : '未配置'),
         ),
-        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
-          card('api-key', MODES['api-key'].title, '长期有效，适合自动化与本机常驻'),
-          card('oauth', MODES.oauth.title, '无需手动管令牌，但需要浏览器交互'),
+        h(
+          'div',
+          { style: s.hint },
+          'Canvas 资源（项目 / 界面 / 设计系统）需要它；与 Google 登录是两套凭据。密钥只写不读，保存后界面上不会再显示。',
+        ),
+        h(
+          'div',
+          { style: s.row },
+          h('input', {
+            type: 'password',
+            autoComplete: 'off',
+            placeholder: state.key ? '已保存；输入新值可覆盖' : '粘贴 API Key',
+            value: apiKey,
+            onChange: (e) => setApiKey(e.target.value),
+            onKeyDown: (e) => {
+              if (e.key === 'Enter') store(REF_KEY, apiKey, 'API Key');
+            },
+            style: s.input,
+            'aria-label': 'Stitch API Key',
+          }),
+          h(
+            'button',
+            {
+              type: 'button',
+              disabled: busy,
+              onClick: () => store(REF_KEY, apiKey, 'API Key'),
+              style: s.btn(true),
+            },
+            busy ? '保存中…' : '保存',
+          ),
+          state.key
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  disabled: busy,
+                  onClick: () => clear(REF_KEY, 'API Key'),
+                  style: s.btn(false),
+                },
+                '清除',
+              )
+            : null,
+        ),
+      );
+
+      const oauthPane = h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+        h(
+          'div',
+          { style: { fontWeight: 600 } },
+          'OAuth',
+          h('span', { style: s.badge(state.token) }, state.token ? '已配置' : '未配置'),
+        ),
+        h(
+          'div',
+          { style: s.hint },
+          '点按钮在浏览器里完成 Google 授权；拿到 access token 后粘贴到下面保存。也可以先执行一次登录命令，CLI 会把令牌存在本地。',
+        ),
+        h(
+          'div',
+          { style: s.row },
+          h('button', { type: 'button', onClick: openBrowser, style: s.btn(true) }, '打开浏览器授权'),
+        ),
+        h(
+          'div',
+          { style: s.row },
+          h('input', {
+            type: 'password',
+            autoComplete: 'off',
+            placeholder: state.token ? '已保存；输入新值可覆盖' : '粘贴 STITCH_ACCESS_TOKEN',
+            value: token,
+            onChange: (e) => setToken(e.target.value),
+            onKeyDown: (e) => {
+              if (e.key === 'Enter') store(REF_TOKEN, token, 'Access Token');
+            },
+            style: s.input,
+            'aria-label': 'Stitch access token',
+          }),
+          h(
+            'button',
+            {
+              type: 'button',
+              disabled: busy,
+              onClick: () => store(REF_TOKEN, token, 'Access Token'),
+              style: s.btn(true),
+            },
+            '保存',
+          ),
+          state.token
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  disabled: busy,
+                  onClick: () => clear(REF_TOKEN, 'Access Token'),
+                  style: s.btn(false),
+                },
+                '清除',
+              )
+            : null,
         ),
         h(
           'div',
           {
             style: {
               fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-              fontSize: 12,
-              padding: '8px 10px',
+              fontSize: 11,
+              padding: '7px 9px',
               borderRadius: 6,
               background: 'var(--dsw-alias-bg-l2)',
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-all',
             },
           },
-          t.command,
+          'node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login',
         ),
+      );
+
+      return h(
+        'div',
+        { 'data-stitch-auth': true, style: s.card },
+        h('div', { style: { fontWeight: 600 } }, 'Stitch 凭据'),
         h(
           'div',
-          { style: { display: 'flex', gap: 8, alignItems: 'center' } },
+          { style: s.tabs },
           h(
             'button',
-            {
-              type: 'button',
-              onClick: () => copy(t.command, mode),
-              style: {
-                padding: '4px 10px',
-                fontSize: 12,
-                borderRadius: 6,
-                border: '1px solid var(--dsw-alias-border-l1)',
-                background: 'var(--dsw-alias-bg-l2)',
-                cursor: 'pointer',
-                color: 'inherit',
-              },
-            },
-            copied === mode ? '已复制' : '复制命令',
+            { type: 'button', style: s.tab(mode === 'api-key'), onClick: () => setMode('api-key') },
+            'API Key',
           ),
-          copied === 'failed'
-            ? h('span', { style: { fontSize: 12, opacity: 0.7 } }, '剪贴板不可用，请手动选择')
-            : null,
+          h('button', { type: 'button', style: s.tab(mode === 'oauth'), onClick: () => setMode('oauth') }, 'OAuth'),
         ),
-        h('div', { style: { fontSize: 12, opacity: 0.75 } }, t.body),
-        h(
-          'div',
-          { style: { fontSize: 12, opacity: 0.75 } },
-          '改完凭据需要重启 Harness 才会重新拉起 MCP 进程。',
-        ),
+        mode === 'api-key' ? apiKeyPane : oauthPane,
+        msg ? h('div', { style: msg.kind === 'ok' ? s.ok : s.err, role: 'status' }, msg.text) : null,
+        h('div', { style: s.hint }, '改完凭据需要重启 Harness，MCP 进程才会带着新凭据重启。'),
       );
     }
 
     return {
-      inject: ['slots'],
+      inject: ['slots', 'remote'],
       apply(ctx) {
+        const remote = ctx.remote;
         ctx.slots.inject('plugins.bundle.config', () =>
-          ctx.slots.register(
-            { name: 'plugins.bundle.config', key: NS, locale: NS },
-            AuthGuide,
+          ctx.slots.register({ name: 'plugins.bundle.config', key: NS, locale: NS }, () =>
+            h(AuthCard, { remote }),
           ),
         );
       },
