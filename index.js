@@ -2,20 +2,24 @@
  * Host half.
  *
  * The Client card stores credentials through the Host `credentials` service
- * (write-only, never read back into the UI). The MCP row for
- * `@deepseek-ai/dsh-mcp-client` reads its env through `!!js` expressions, which
- * can only see `process.env`, so this entry republishes the stored values into
- * `process.env` at activation.
+ * (write-only, never read back into the UI). Two delivery paths exist because a
+ * `!!js` config expression may be evaluated before this plugin activates:
  *
- * `STITCH_HTTPS_PROXY` is the outbound proxy for the CLI child. It is stored like
- * a credential because that is the only writable store a bundle can reach, but it
- * is not a secret. Node's built-in fetch ignores HTTPS_PROXY unless
- * NODE_USE_ENV_PROXY=1, which the patch row sets.
+ * 1. `process.env` — the MCP row's `!!js` expressions read it.
+ * 2. A `.env` file in the CLI runtime directory — the CLI loads it itself, so the
+ *    key reaches the child even when the env hand-off loses the race. The patch
+ *    row sets `cwd` to that directory for this reason.
  *
- * Row order in cordis.patch.yml matters: this entry is inserted before the
- * `stitch-mcp` row, and Cordis awaits each activation, so the variables are set
- * before the MCP client evaluates its env.
+ * `STITCH_HTTPS_PROXY` is the outbound proxy. It is stored like a credential
+ * because that is the only writable store a bundle can reach, but it is not a
+ * secret. Node's built-in fetch ignores HTTPS_PROXY unless NODE_USE_ENV_PROXY=1,
+ * which the patch row sets; that variable must therefore be a real environment
+ * variable, which is why the proxy is also written to `process.env`.
  */
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const ENV_REFS = [
   'STITCH_API_KEY',
@@ -24,20 +28,48 @@ const ENV_REFS = [
   'STITCH_BASE_URL',
 ];
 
+const ENV_FILE = path.join(os.homedir(), '.dsh', 'dsh-runtimes', 'stitch-mcp', '.env');
+
 export async function apply(ctx) {
   const credentials = ctx.get('credentials');
   if (credentials === undefined) return;
 
+  const values = {};
   for (const name of ENV_REFS) {
     const value = await read(credentials, name);
-    if (value !== undefined) process.env[name] = value;
+    if (value !== undefined) {
+      process.env[name] = value;
+      values[name] = value;
+    }
   }
 
-  // A configured proxy applies to both variable names the toolchain may consult.
   const proxy = await read(credentials, 'STITCH_HTTPS_PROXY');
   if (proxy !== undefined) {
     process.env.HTTPS_PROXY = proxy;
     process.env.HTTP_PROXY = proxy;
+    values.HTTPS_PROXY = proxy;
+    values.HTTP_PROXY = proxy;
+  }
+
+  writeEnvFile(values);
+}
+
+/**
+ * Mirror the resolved values into the CLI runtime directory so the child can read
+ * them without depending on the environment hand-off. Only non-empty values are
+ * written, and the file is removed when nothing is configured.
+ */
+function writeEnvFile(values) {
+  try {
+    const lines = Object.entries(values).map(([key, value]) => `${key}=${value}`);
+    if (lines.length === 0) {
+      fs.rmSync(ENV_FILE, { force: true });
+      return;
+    }
+    fs.mkdirSync(path.dirname(ENV_FILE), { recursive: true });
+    fs.writeFileSync(ENV_FILE, lines.join('\n') + '\n', { mode: 0o600 });
+  } catch {
+    // A read-only home directory only costs the fallback path, never activation.
   }
 }
 

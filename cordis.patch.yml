@@ -20,6 +20,10 @@
         command: !!js process.execPath
         args:
           - !!js "typeof dshHomePath === 'function' ? dshHomePath('dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/mcp.js') : process.env.DSH_PROFILE_DIR + '/../../dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/mcp.js'"
+        # The Host half mirrors stored credentials into <this dir>/.env, which the
+        # CLI loads itself. That is what actually delivers the API key: an env
+        # `!!js` expression in this row may be evaluated before the Host half runs.
+        cwd: !!js "typeof dshHomePath === 'function' ? dshHomePath('dsh-runtimes/stitch-mcp') : process.env.DSH_PROFILE_DIR + '/../../dsh-runtimes/stitch-mcp'"
         env:
           ELECTRON_RUN_AS_NODE: '1'
           # Node's built-in fetch (undici) ignores HTTPS_PROXY unless this is set.
