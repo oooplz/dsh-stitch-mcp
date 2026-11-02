@@ -1,18 +1,17 @@
 # Google Stitch as an MCP server for DeepSeek Harness.
 #
-# Google publishes Stitch as a remote MCP endpoint that authenticates with an API
-# key in a header — the same shape their setup docs show for other MCP clients:
+# Stitch is a remote MCP endpoint documented as:
 #
-#   "servers": { "stitch": {
-#     "type": "http",
-#     "url": "https://stitch.googleapis.com/mcp",
-#     "headers": { "X-Goog-Api-Key": "AQ...." } } }
+#   { "type": "http", "url": "https://stitch.googleapis.com/mcp",
+#     "headers": { "X-Goog-Api-Key": "AQ...." } }
 #
-# So this row uses the Streamable HTTP transport with the key as a header. The key
-# never lives in this file: the Host half (index.js) resolves the stored
-# credential into process.env.STITCH_API_KEY before this row activates.
+# The endpoint is only reachable through a proxy on many networks, and the
+# Streamable HTTP transport runs inside the Harness process, which cannot be given
+# the proxy flag by a plugin. The Host half therefore starts relay.js — a child
+# process that owns the proxy flag and the credential header — and this row talks
+# to that relay on localhost. relay.js forwards the same requests unchanged.
 - insert:
-    # Bundle's own Host entry: publishes stored credentials into process.env and
+    # Bundle's own Host entry: publishes stored credentials, starts the relay and
     # mounts the Client half (the credential card).
     - id: dsh-stitch-mcp
       name: 'dsh-stitch-mcp'
@@ -22,11 +21,12 @@
       config:
         serverName: stitch
         transport: streamable-http
-        url: https://stitch.googleapis.com/mcp
-        headers:
-          X-Goog-Api-Key: !!js "process.env.STITCH_API_KEY || ''"
+        url: http://127.0.0.1:7788/mcp
+        # No credential header here on purpose: the relay owns it. A `!!js` value
+        # can be evaluated before this bundle's Host half runs, which would send an
+        # empty X-Goog-Api-Key and shadow the real one.
         # Keep the harness healthy when the endpoint is unreachable; the failure is
         # logged instead of rejecting plugin activation.
         failOnStartupError: false
-        # stitch_generate starts a backend job, so allow more than the 60s default.
+        # Large tool catalog and job-starting calls need more than the 60s default.
         toolCallTimeoutMs: 120000
