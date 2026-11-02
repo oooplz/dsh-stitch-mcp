@@ -15,18 +15,15 @@ window.__ModuleLoader__.load({
     // locale/*.json carries the plugin's meta title and description.
     const I18N = {
       en: {
-        title: 'Credentials',
-        apiKey: 'API Key',
-        token: 'OAuth access token',
-        apiKeyHint: 'Required for Canvas resources: projects, screens, design systems.',
-        tokenHint: 'Sign-in runs through the CLI, which owns the OAuth callback.',
+        apiKeyTab: 'API Key',
+        oauthTab: 'OAuth',
+        pasteKey: 'Paste Google Stitch API Key',
+        pasteToken: 'Paste Google Stitch AccessToken',
+        replaceKey: 'Replace Google Stitch API Key',
+        replaceToken: 'Replace Google Stitch AccessToken',
         createKey: 'Create API Key',
         copyCommand: 'Copy login command',
         openSettings: 'Open settings',
-        pasteKey: 'Paste API Key',
-        replaceKey: 'Replace API Key',
-        pasteToken: 'Paste access token',
-        replaceToken: 'Replace access token',
         save: 'Save',
         saving: 'Saving…',
         clear: 'Clear',
@@ -46,18 +43,15 @@ window.__ModuleLoader__.load({
         openFailed: 'Could not open settings.',
       },
       zh: {
-        title: '凭据',
-        apiKey: 'API Key',
-        token: 'OAuth access token',
-        apiKeyHint: 'Canvas 资源（项目 / 界面 / 设计系统）需要 API Key。',
-        tokenHint: '登录由 CLI 完成，OAuth 回调由它接收。',
+        apiKeyTab: 'API Key',
+        oauthTab: 'OAuth',
+        pasteKey: '粘贴 Google Stitch API Key',
+        pasteToken: '粘贴 Google Stitch AccessToken',
+        replaceKey: '替换 Google Stitch API Key',
+        replaceToken: '替换 Google Stitch AccessToken',
         createKey: '创建 API Key',
         copyCommand: '复制登录命令',
         openSettings: '打开设置页',
-        pasteKey: '粘贴 API Key',
-        replaceKey: '替换 API Key',
-        pasteToken: '粘贴 access token',
-        replaceToken: '替换 access token',
         save: '保存',
         saving: '保存中…',
         clear: '清除',
@@ -98,58 +92,50 @@ window.__ModuleLoader__.load({
 
     const s = {
       card: {
-        padding: '14px 16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        padding: '12px 14px',
         border: BORDER,
         borderRadius: 10,
         fontSize: 13,
         color: 'inherit',
       },
-      title: {
-        fontSize: 13,
-        fontWeight: 600,
-        letterSpacing: 0.2,
-        marginBottom: 12,
+      tabsRow: { display: 'flex', alignItems: 'center', gap: 6 },
+      tabs: {
+        display: 'inline-flex',
+        gap: 2,
+        padding: 2,
+        borderRadius: 8,
+        background: 'var(--dsw-alias-bg-l2)',
+        border: BORDER,
       },
-      group: { display: 'flex', flexDirection: 'column', gap: 6 },
-      divider: {
-        height: 1,
-        background: 'var(--dsw-alias-border-l1)',
-        opacity: 0.6,
-        margin: '14px 0',
-      },
-      labelRow: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        minHeight: 18,
-      },
-      label: {
+      tab: (active) => ({
+        padding: '4px 12px',
         fontSize: 12,
-        fontWeight: 600,
-        letterSpacing: 0.3,
-        opacity: 0.9,
-      },
-      hint: {
-        fontSize: 12,
-        opacity: 0.55,
-        lineHeight: 1.4,
-      },
-      statusDot: (on) => ({
-        width: 6,
-        height: 6,
-        borderRadius: '50%',
-        background: on ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-border-l1)',
-        display: 'inline-block',
-        marginRight: 5,
+        fontWeight: active ? 600 : 400,
+        borderRadius: 6,
+        cursor: 'pointer',
+        border: 'none',
+        background: active ? 'var(--dsw-alias-bg-l1)' : 'transparent',
+        color: 'inherit',
+        opacity: active ? 1 : 0.7,
       }),
       status: {
         marginLeft: 'auto',
         display: 'inline-flex',
         alignItems: 'center',
+        gap: 5,
         fontSize: 12,
-        opacity: 0.75,
+        opacity: 0.7,
       },
-      fieldRow: { display: 'flex', alignItems: 'center', gap: 8 },
+      dot: (on) => ({
+        width: 6,
+        height: 6,
+        borderRadius: '50%',
+        background: on ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-border-l1)',
+      }),
+      row: { display: 'flex', alignItems: 'center', gap: 8 },
       input: {
         flex: 1,
         minWidth: 0,
@@ -157,12 +143,10 @@ window.__ModuleLoader__.load({
         boxSizing: 'border-box',
         padding: '0 10px',
         fontSize: 13,
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
         borderRadius: 6,
         border: BORDER,
-        background: 'var(--dsw-alias-bg-l2)',
+        background: 'var(--dsw-alias-bg-l1)',
         color: 'inherit',
-        outline: 'none',
       },
       btn: (primary) => ({
         height: 32,
@@ -178,69 +162,27 @@ window.__ModuleLoader__.load({
         color: primary ? '#fff' : 'inherit',
       }),
       link: {
-        height: 32,
-        padding: '0 2px',
+        padding: 0,
         fontSize: 12,
         border: 'none',
         background: 'transparent',
         color: 'inherit',
-        opacity: 0.7,
+        opacity: 0.65,
         cursor: 'pointer',
         textDecoration: 'underline',
         textUnderlineOffset: 2,
         whiteSpace: 'nowrap',
       },
-      actions: { display: 'flex', alignItems: 'center', gap: 12, minHeight: 32 },
-      ok: { fontSize: 12, marginTop: 10, color: 'var(--dsw-alias-state-business-primary)' },
-      err: { fontSize: 12, marginTop: 10, color: '#d14343' },
-      foot: { fontSize: 11, opacity: 0.45, marginTop: 10 },
+      actions: { display: 'flex', alignItems: 'center', gap: 10, minHeight: 18 },
+      ok: { fontSize: 12, color: 'var(--dsw-alias-state-business-primary)' },
+      err: { fontSize: 12, color: '#d14343' },
+      foot: { fontSize: 11, opacity: 0.45 },
     };
-
-    function Field(props) {
-      const { label, hint, value, onChange, onSave, onClear, configured, busy, t, placeholder, children } = props;
-      return h(
-        'div',
-        { style: s.group },
-        h(
-          'div',
-          { style: s.labelRow },
-          h('span', { style: s.label }, label),
-          h(
-            'span',
-            { style: s.status },
-            h('span', { style: s.statusDot(configured) }),
-            configured ? t.configured : t.notSet,
-          ),
-        ),
-        h('div', { style: s.hint }, hint),
-        h(
-          'div',
-          { style: s.fieldRow },
-          h('input', {
-            type: 'password',
-            autoComplete: 'off',
-            spellCheck: false,
-            'aria-label': label,
-            placeholder,
-            value,
-            onChange: (e) => onChange(e.target.value),
-            onKeyDown: (e) => {
-              if (e.key === 'Enter') onSave();
-            },
-            style: s.input,
-          }),
-          h('button', { type: 'button', disabled: busy, onClick: onSave, style: s.btn(true) }, busy ? t.saving : t.save),
-          configured
-            ? h('button', { type: 'button', disabled: busy, onClick: onClear, style: s.btn(false) }, t.clear)
-            : null,
-        ),
-        h('div', { style: s.actions }, children),
-      );
-    }
 
     function CredentialCard(props) {
       const creds = props.creds;
       const t = props.t;
+      const [tab, setTab] = React.useState('key');
       const [keyValue, setKeyValue] = React.useState('');
       const [tokenValue, setTokenValue] = React.useState('');
       const [state, setState] = React.useState({ key: false, token: false });
@@ -267,7 +209,7 @@ window.__ModuleLoader__.load({
         return undefined;
       }, [creds]);
 
-      const save = (ref, value, setValue) => {
+      const save = (ref, value, reset) => {
         if (!creds || typeof creds.set !== 'function') {
           setMsg({ kind: 'err', text: t.noService });
           return;
@@ -283,7 +225,7 @@ window.__ModuleLoader__.load({
             setBusy(null);
             if (res && res.ok === true) {
               setMsg({ kind: 'ok', text: t.saved });
-              setValue('');
+              reset('');
               describe();
             } else {
               setMsg({ kind: 'err', text: (res && res.error && res.error.message) || t.saveFailed });
@@ -343,44 +285,100 @@ window.__ModuleLoader__.load({
         }
       };
 
+      const isKey = tab === 'key';
+      const ref = isKey ? REF_KEY : REF_TOKEN;
+      const value = isKey ? keyValue : tokenValue;
+      const setValue = isKey ? setKeyValue : setTokenValue;
+      const configured = isKey ? state.key : state.token;
+
       return h(
         'div',
         { 'data-stitch-credentials': true, style: s.card },
-        h('div', { style: s.title }, t.title),
         h(
-          Field,
-          {
-            label: t.apiKey,
-            hint: t.apiKeyHint,
-            value: keyValue,
-            onChange: setKeyValue,
-            onSave: () => save(REF_KEY, keyValue, setKeyValue),
-            onClear: () => clear(REF_KEY),
-            configured: state.key,
-            busy: busy === REF_KEY,
-            placeholder: state.key ? t.replaceKey : t.pasteKey,
-            t,
-          },
-          h('button', { type: 'button', onClick: open, style: s.link }, t.createKey + ' \u2197'),
+          'div',
+          { style: s.tabsRow },
+          h(
+            'div',
+            { style: s.tabs, role: 'tablist' },
+            h(
+              'button',
+              {
+                type: 'button',
+                role: 'tab',
+                'aria-selected': isKey,
+                style: s.tab(isKey),
+                onClick: () => {
+                  setTab('key');
+                  setMsg(null);
+                },
+              },
+              t.apiKeyTab,
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                role: 'tab',
+                'aria-selected': !isKey,
+                style: s.tab(!isKey),
+                onClick: () => {
+                  setTab('oauth');
+                  setMsg(null);
+                },
+              },
+              t.oauthTab,
+            ),
+          ),
+          h(
+            'span',
+            { style: s.status },
+            h('span', { style: s.dot(configured) }),
+            configured ? t.configured : t.notSet,
+          ),
         ),
-        h('div', { style: s.divider }),
         h(
-          Field,
-          {
-            label: t.token,
-            hint: t.tokenHint,
-            value: tokenValue,
-            onChange: setTokenValue,
-            onSave: () => save(REF_TOKEN, tokenValue, setTokenValue),
-            onClear: () => clear(REF_TOKEN),
-            configured: state.token,
-            busy: busy === REF_TOKEN,
-            placeholder: state.token ? t.replaceToken : t.pasteToken,
-            t,
-          },
-          h('button', { type: 'button', onClick: copyCommand, style: s.link }, t.copyCommand),
-          h('span', { style: { fontSize: 12, opacity: 0.25 } }, '\u00b7'),
-          h('button', { type: 'button', onClick: open, style: s.link }, t.openSettings),
+          'div',
+          { style: s.row },
+          h('input', {
+            type: 'password',
+            autoComplete: 'off',
+            spellCheck: false,
+            'aria-label': isKey ? t.apiKeyTab : t.oauthTab,
+            placeholder: configured
+              ? isKey
+                ? t.replaceKey
+                : t.replaceToken
+              : isKey
+                ? t.pasteKey
+                : t.pasteToken,
+            value,
+            onChange: (e) => setValue(e.target.value),
+            onKeyDown: (e) => {
+              if (e.key === 'Enter') save(ref, value, setValue);
+            },
+            style: s.input,
+          }),
+          h(
+            'button',
+            { type: 'button', disabled: busy === ref, onClick: () => save(ref, value, setValue), style: s.btn(true) },
+            busy === ref ? t.saving : t.save,
+          ),
+          configured
+            ? h('button', { type: 'button', disabled: busy === ref, onClick: () => clear(ref), style: s.btn(false) }, t.clear)
+            : null,
+        ),
+        h(
+          'div',
+          { style: s.actions },
+          isKey
+            ? h('button', { type: 'button', onClick: open, style: s.link }, t.createKey + ' \u2197')
+            : h(
+                React.Fragment,
+                null,
+                h('button', { type: 'button', onClick: copyCommand, style: s.link }, t.copyCommand),
+                h('span', { style: { fontSize: 12, opacity: 0.25 } }, '\u00b7'),
+                h('button', { type: 'button', onClick: open, style: s.link }, t.openSettings),
+              ),
         ),
         msg ? h('div', { style: msg.kind === 'ok' ? s.ok : s.err }, msg.text) : null,
         h('div', { style: s.foot }, t.restart),
