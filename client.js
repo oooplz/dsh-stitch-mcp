@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
         proxyUse: 'Use a proxy',
         proxyOn: 'On',
         proxyOff: 'Off',
-        proxyHint: 'On: only the Stitch requests of this plugin use the address, applied within seconds. Off: this plugin adds no proxy — direct, or whatever HTTPS_PROXY the harness already has.',
+        proxyHint: 'On: use the proxy server. Off: direct by default, or the system proxy.',
         hostLabel: 'Proxy IP address',
         portLabel: 'Port',
         pasteKey: 'Paste API Key',
@@ -39,7 +39,6 @@ window.__ModuleLoader__.load({
         clear: 'Clear',
         configured: 'Configured',
         notSet: 'Not set',
-        restart: 'Saved credentials reload the connection on their own; the proxy switch applies within seconds — no restart.',
         empty: 'Value is empty.',
         proxyRequired: 'Host and port are required.',
         portInvalid: 'Port must be a number between 1 and 65535.',
@@ -61,7 +60,7 @@ window.__ModuleLoader__.load({
         proxyUse: '使用代理服务器',
         proxyOn: '开',
         proxyOff: '关',
-        proxyHint: '开：只有 Stitch 的请求走这个地址，几秒内生效。关：本插件不额外加代理——直连，或按环境里已有的 HTTPS_PROXY。',
+        proxyHint: '开：走代理服务器，关：默认直连，或者使用系统代理。',
         hostLabel: '代理 IP 地址',
         portLabel: '端口',
         pasteKey: '粘贴 API Key',
@@ -76,7 +75,6 @@ window.__ModuleLoader__.load({
         clear: '清除',
         configured: '已配置',
         notSet: '未配置',
-        restart: '凭据保存后自动重载连接；代理开关几秒内生效，无需重启。',
         empty: '内容为空。',
         proxyRequired: '服务器和端口都不能为空。',
         portInvalid: '端口需为 1–65535 的数字。',
@@ -213,7 +211,6 @@ window.__ModuleLoader__.load({
       ok: { fontSize: 12, color: 'var(--dsw-alias-state-business-primary)' },
       err: { fontSize: 12, color: '#d14343' },
       hint: { fontSize: 11, opacity: 0.5, lineHeight: 1.4 },
-      foot: { fontSize: 11, opacity: 0.45 },
     };
 
     function Switch(props) {
@@ -557,7 +554,6 @@ window.__ModuleLoader__.load({
           : null,
         proxyOn ? h('div', { style: s.hint }, t.proxyHint) : null,
         msg ? h('div', { style: msg.kind === 'ok' ? s.ok : s.err }, msg.text) : null,
-        h('div', { style: s.foot }, t.restart),
       );
     }
 
