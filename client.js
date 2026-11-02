@@ -9,8 +9,8 @@ window.__ModuleLoader__.load({
     const REF_TOKEN = 'STITCH_ACCESS_TOKEN';
     const REF_PROXY = 'STITCH_HTTPS_PROXY';
     const SETTINGS_URL = 'https://stitch.withgoogle.com/settings';
-    const LOGIN_COMMAND =
-      'node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login';
+    // The OAuth tab takes an access token; this is how a Google Cloud user gets one.
+    const TOKEN_COMMAND = 'gcloud auth print-access-token';
     const DEFAULT_HOST = '127.0.0.1';
     const DEFAULT_PORT = '7897';
 
@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
         proxyUse: 'Use a proxy',
         proxyOn: 'On',
         proxyOff: 'Off',
-        proxyHint: 'Off: connect directly, and fall back to a proxy found on this machine. On: try this address first.',
+        proxyHint: 'Off: direct, no configuration needed. On: this address is written to ~/.dsh/.env as HTTPS_PROXY for the whole harness.',
         hostLabel: 'Proxy IP address',
         portLabel: 'Port',
         pasteKey: 'Paste API Key',
@@ -32,21 +32,21 @@ window.__ModuleLoader__.load({
         replaceKey: 'Replace API Key',
         replaceToken: 'Replace AccessToken',
         createKey: 'Create API Key',
-        copyCommand: 'Copy login command',
+        copyCommand: 'Copy token command',
         openSettings: 'Open settings',
         save: 'Save',
         saving: 'Saving…',
         clear: 'Clear',
         configured: 'Configured',
         notSet: 'Not set',
-        restart: 'Restart the harness to apply changes.',
+        restart: 'A saved credential reloads the connection on its own; a proxy applies after restarting the harness.',
         empty: 'Value is empty.',
         proxyRequired: 'Host and port are required.',
         portInvalid: 'Port must be a number between 1 and 65535.',
         noService: 'The credentials service is unavailable.',
         saveFailed: 'Save failed.',
         clearFailed: 'Clear failed.',
-        saved: 'Saved.',
+        saved: 'Saved — the connection reloads on its own.',
         cleared: 'Cleared.',
         copied: 'Command copied.',
         copyFailed: 'Clipboard unavailable.',
@@ -61,7 +61,7 @@ window.__ModuleLoader__.load({
         proxyUse: '使用代理服务器',
         proxyOn: '开',
         proxyOff: '关',
-        proxyHint: '关：直连，失败时自动使用本机代理。开：优先使用下面的地址。',
+        proxyHint: '关：直连，不需要任何配置。开：该地址会写入 ~/.dsh/.env 的 HTTPS_PROXY，对整个 Harness 生效。',
         hostLabel: '代理 IP 地址',
         portLabel: '端口',
         pasteKey: '粘贴 API Key',
@@ -69,21 +69,21 @@ window.__ModuleLoader__.load({
         replaceKey: '替换 API Key',
         replaceToken: '替换 AccessToken',
         createKey: '创建 API Key',
-        copyCommand: '复制登录命令',
+        copyCommand: '复制取令牌命令',
         openSettings: '打开设置页',
         save: '保存',
         saving: '保存中…',
         clear: '清除',
         configured: '已配置',
         notSet: '未配置',
-        restart: '重启 Harness 后生效。',
+        restart: '凭据保存后自动重载连接；代理需重启 Harness 后生效。',
         empty: '内容为空。',
         proxyRequired: '服务器和端口都不能为空。',
         portInvalid: '端口需为 1–65535 的数字。',
         noService: 'credentials 服务不可用。',
         saveFailed: '保存失败。',
         clearFailed: '清除失败。',
-        saved: '已保存。',
+        saved: '已保存，连接会自动重载。',
         cleared: '已清除。',
         copied: '命令已复制。',
         copyFailed: '剪贴板不可用。',
@@ -377,7 +377,7 @@ window.__ModuleLoader__.load({
             setMsg({ kind: 'err', text: t.copyFailed });
             return;
           }
-          navigator.clipboard.writeText(LOGIN_COMMAND).then(
+          navigator.clipboard.writeText(TOKEN_COMMAND).then(
             () => setMsg({ kind: 'ok', text: t.copied }),
             () => setMsg({ kind: 'err', text: t.copyFailed }),
           );

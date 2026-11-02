@@ -5,14 +5,27 @@
 #   { "type": "http", "url": "https://stitch.googleapis.com/mcp",
 #     "headers": { "X-Goog-Api-Key": "AQ...." } }
 #
-# The endpoint is only reachable through a proxy on many networks, and the
-# Streamable HTTP transport runs inside the Harness process, which cannot be given
-# the proxy flag by a plugin. The Host half therefore starts relay.js — a child
-# process that owns the proxy flag and the credential header — and this row talks
-# to that relay on localhost. relay.js forwards the same requests unchanged.
+# The row talks to it directly. Nothing routes the traffic on the plugin's side:
+#
+# * direct is the default, so a network that reaches Google needs no configuration;
+# * a proxied network is covered by the harness itself — the launcher resolves one
+#   outbound policy from `HTTPS_PROXY` / `ALL_PROXY` / `$DSH_HOME/.env` and every
+#   `fetch` in the process follows it, this transport included. The Host half writes
+#   the address from the card into `$DSH_HOME/.env`, and the policy applies at the
+#   next launch;
+# * an unreachable endpoint stays an honest transport error instead of a fake
+#   connection, and `~/.dsh/dsh-runtimes/stitch-mcp/status.json` records the reason.
+#
+# `headers` carries the credential, and config expressions are evaluated before any
+# plugin runs, so the value is read synchronously from the runtime `config.json` the
+# Host half maintains. When the card saves a new credential, that file changes and
+# the Host half asks the plugin manager to compose this entry again, which is how the
+# new header applies without restarting the harness.
+#
+# Keep the two rows in this order: the Host half is what writes `config.json`.
 - insert:
-    # Bundle's own Host entry: publishes stored credentials, starts the relay and
-    # mounts the Client half (the credential card).
+    # Bundle's own Host entry: publishes stored credentials, keeps the proxy block in
+    # `$DSH_HOME/.env`, writes the status file and reloads the row below on a change.
     - id: dsh-stitch-mcp
       name: 'dsh-stitch-mcp'
       config: {}
@@ -21,17 +34,19 @@
       config:
         serverName: stitch
         transport: streamable-http
-        url: http://127.0.0.1:7788/mcp
-        # No credential header here on purpose: the relay owns it. A `!!js` value
-        # can be evaluated before this bundle's Host half runs, which would send an
-        # empty X-Goog-Api-Key and shadow the real one.
-        # Keep the harness healthy when the endpoint is unreachable; the failure is
+        url: https://stitch.googleapis.com/mcp
+        # Only the credential headers are built, and only the ones that exist, so an
+        # empty value can never shadow a real one. File paths mirror index.js:
+        # `$DSH_HOME` or `~/.dsh`, then `dsh-runtimes/stitch-mcp/config.json`.
+        headers: !!js "(() => { try { const fs = process.getBuiltinModule('fs'), path = process.getBuiltinModule('path'), os = process.getBuiltinModule('os'), home = process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), config = JSON.parse(fs.readFileSync(path.join(home, 'dsh-runtimes', 'stitch-mcp', 'config.json'), 'utf8')), headers = {}; if (typeof config.accessToken === 'string' && config.accessToken) headers.Authorization = 'Bearer ' + config.accessToken; else if (typeof config.apiKey === 'string' && config.apiKey) headers['X-Goog-Api-Key'] = config.apiKey; if (typeof config.projectId === 'string' && config.projectId) headers['X-Goog-User-Project'] = config.projectId; return headers; } catch (error) { return {}; } })()"
+        # Keep the harness healthy while the endpoint is unreachable; the failure is
         # logged instead of rejecting plugin activation.
         failOnStartupError: false
         # Large tool catalog and job-starting calls need more than the 60s default.
         toolCallTimeoutMs: 120000
-        # The relay is a child process, so it can be a moment late at startup or be
-        # replaced while running. Keep retrying instead of staying disconnected.
+        # A row that gave up stays dead (`maxAttempts` is one-way), so the Host half
+        # also reloads this entry when a credential or proxy appears. Until then, keep
+        # retrying with a bounded delay; a connection that survives 3s resets the budget.
         reconnect:
           enabled: true
           initialDelayMs: 300

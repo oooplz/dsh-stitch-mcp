@@ -1,42 +1,52 @@
-/**
- * Host half.
- *
- * Stitch is a *remote* MCP endpoint: `streamable-http` to
- * https://stitch.googleapis.com/mcp with an `X-Goog-Api-Key` (or an OAuth
- * `Authorization: Bearer` plus `X-Goog-User-Project`) header. Two constraints
- * decide how that is wired here:
- *
- * 1. The transport runs inside the Harness process, which only honours
- *    HTTPS_PROXY when NODE_USE_ENV_PROXY was set at launch, and the transport has
- *    no proxy option of its own. A plugin cannot change either.
- * 2. A `!!js` config expression may be evaluated before this plugin activates, so
- *    the MCP row must not carry the credential itself.
- *
- * So this entry keeps one source of truth on disk — config.json in the runtime
- * directory — starts relay.js (a child that owns the proxy flag and injects the
- * credential headers), and points the MCP row at that relay on localhost.
- *
- * The credential is resolved from the credentials service, then from the
- * credentials file on disk, then from the environment, then from the previous
- * config.json, and the result is merged instead of overwritten: a plugin that
- * activates before the credentials service is ready must not erase a working
- * setup.
- */
+// Google Stitch as an MCP server for DeepSeek Harness — no helper process.
+//
+// Stitch is a *remote* MCP endpoint, documented as:
+//
+//   { "type": "http", "url": "https://stitch.googleapis.com/mcp",
+//     "headers": { "X-Goog-Api-Key": "AQ...." } }
+//
+// The row below speaks to it directly, which is the whole point:
+//
+// * overseas users need nothing: the endpoint is reached directly;
+// * a proxied network is covered by the harness itself — the `dsh` launcher
+//   installs one outbound proxy policy for the process (`HTTPS_PROXY`, `ALL_PROXY`,
+//   or `$DSH_HOME/.env`), and every `fetch` in the process, including this MCP
+//   transport, follows it. The Host half writes the address from the card into
+//   `$DSH_HOME/.env`, so the plugin never has to route anything by itself;
+// * when nothing can reach the endpoint the row reports its own transport error
+//   instead of a fake connection, and `status.json` records which step failed.
+//
+// Two details decide the shape of the YAML:
+//
+// 1. The credential has to be in `headers` at compose time, so the row reads it
+//    synchronously from the runtime `config.json` written here. Reading a file
+//    (rather than the credentials service) is what makes a key saved in the card
+//    usable at all: config expressions are evaluated before any plugin runs.
+// 2. Because a saved key changes that file, the row has to be composed again for
+//    the new header to apply. The Host half therefore asks the plugin manager to
+//    reload just this entry after a credential change, which is the same live path
+//    the Plugin Manager's own toggle uses — no harness restart.
+//
+// `server/discover` matters too: the MCP client probes it before `initialize`, and
+// Stitch answers the probe with a JSON-RPC "method not supported" (HTTP 200), so
+// the client falls back to the classic handshake. A 5xx there would end the
+// connection attempt for good, which is why nothing in this path may return one.
 
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const RELAY_SCRIPT = fileURLToPath(new URL('./relay.js', import.meta.url));
-const RELAY_PORT = Number(process.env.STITCH_RELAY_PORT || 7788);
-const RUNTIME_DIR = path.join(os.homedir(), '.dsh', 'dsh-runtimes', 'stitch-mcp');
+const ENDPOINT = 'https://stitch.googleapis.com/mcp';
+const DSH_HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh');
+const RUNTIME_DIR = path.join(DSH_HOME, 'dsh-runtimes', 'stitch-mcp');
 const CONFIG_FILE = path.join(RUNTIME_DIR, 'config.json');
-const LOG_FILE = path.join(RUNTIME_DIR, 'relay.log');
 const STATUS_FILE = path.join(RUNTIME_DIR, 'status.json');
-const CREDENTIALS_FILE = path.join(os.homedir(), '.dsh', '.credentials.yaml');
+const LOG_FILE = path.join(RUNTIME_DIR, 'plugin.log');
+const ENV_FILE = path.join(DSH_HOME, '.env');
+const CREDENTIALS_FILE = path.join(DSH_HOME, '.credentials.yaml');
 
+/** Loader entry id of the MCP row this bundle contributes. */
+const MCP_ENTRY_ID = 'stitch-mcp';
 /** Credential reference name → key in config.json. */
 const FIELDS = {
   STITCH_API_KEY: 'apiKey',
@@ -44,12 +54,15 @@ const FIELDS = {
   STITCH_PROJECT_ID: 'projectId',
   STITCH_HTTPS_PROXY: 'proxy',
 };
+const PROXY_BLOCK_START = '# >>> dsh-stitch-mcp proxy (managed; restart the harness to apply)';
+const PROXY_BLOCK_END = '# <<< dsh-stitch-mcp proxy';
 
 export async function apply(ctx) {
   const config = await resolveConfig(ctx);
-  writeConfig(config);
-  await ensureRelay(config);
-  writeStatus(await probe(config));
+  const changed = writeConfig(config);
+  writeProxyEnv(config);
+  const status = await probe(config);
+  writeStatus({ ...status, reload: changed ? await reloadRow(ctx) : undefined });
   keepAlive(ctx);
 }
 
@@ -59,7 +72,7 @@ async function resolveConfig(ctx) {
   const service = safeGet(ctx, 'credentials');
   const stored = readCredentialsFile();
   // Turning the proxy switch off clears the stored reference, so the value kept in
-  // config.json must not be inherited again; the relay then goes direct.
+  // config.json must not be inherited again; the endpoint is then reached directly.
   const proxyDisabled = (await proxyConfigured(service)) === false;
   const resolved = {};
 
@@ -130,104 +143,148 @@ function readCredentialsFile() {
   }
 }
 
+/** Write config.json when it changed. Returns true when the file changed. */
 function writeConfig(config) {
   try {
     fs.mkdirSync(RUNTIME_DIR, { recursive: true });
     // Nothing resolved anywhere: keep whatever worked before rather than
     // destroying it.
-    if (Object.keys(config).length === 0) return;
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
-  } catch {
-    // A read-only home directory only costs the relay, never activation.
-  }
-}
-
-/** Start the relay unless it already answers on the port. */
-async function ensureRelay(config) {
-  if (await health()) return true;
-
-  try {
-    fs.mkdirSync(RUNTIME_DIR, { recursive: true });
-    const log = fs.openSync(LOG_FILE, 'a');
-    const child = spawn(process.execPath, [RELAY_SCRIPT], {
-      cwd: RUNTIME_DIR,
-      env: {
-        ...process.env,
-        // The relay follows the documented MCP request flow, so it can run as a
-        // plain Node script under the embedded runtime.
-        ELECTRON_RUN_AS_NODE: '1',
-        STITCH_RELAY_PORT: String(RELAY_PORT),
-      },
-      detached: true,
-      stdio: ['ignore', log, log],
-      windowsHide: true,
-    });
-    child.unref();
-  } catch {
+    if (Object.keys(config).length === 0) return false;
+    const next = JSON.stringify(config, null, 2) + '\n';
+    let current = '';
+    try {
+      current = fs.readFileSync(CONFIG_FILE, 'utf8');
+    } catch {
+      // The file is created below.
+    }
+    if (current === next) return false;
+    fs.writeFileSync(CONFIG_FILE, next, { mode: 0o600 });
+    log('wrote config.json (credential: ' + (config.accessToken ? 'access-token' : config.apiKey ? 'api-key' : 'none') + ')');
+    return true;
+  } catch (error) {
+    log('could not write config.json: ' + (error?.message || String(error)));
+    // A read-only DSH home only costs the credential, never activation.
     return false;
   }
-  return waitFor(() => health().then((value) => value !== undefined), 6000);
 }
 
-async function waitFor(predicate, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    if (await predicate()) return true;
-    if (Date.now() > deadline) return false;
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-}
-
-async function health() {
+/**
+ * Put the card's proxy into `$DSH_HOME/.env`, which the launcher reads for its
+ * outbound proxy policy. The harness applies env values at launch, so the file is
+ * written immediately while the running process keeps its current routing; the
+ * status file says so.
+ */
+function writeProxyEnv(config) {
+  const proxy = typeof config.proxy === 'string' ? config.proxy.trim() : '';
   try {
-    const res = await fetch(`http://127.0.0.1:${RELAY_PORT}/healthz`, {
-      signal: AbortSignal.timeout(1500),
-    });
-    if (!res.ok) return undefined;
-    return await res.json();
-  } catch {
-    return undefined;
+    let text = '';
+    try {
+      text = fs.readFileSync(ENV_FILE, 'utf8');
+    } catch {
+      // Created below.
+    }
+    const block = proxy
+      ? [PROXY_BLOCK_START, 'HTTPS_PROXY=' + proxy, 'HTTP_PROXY=' + proxy, PROXY_BLOCK_END].join('\n')
+      : '';
+    const pattern = new RegExp(
+      '(?:^|\\n)' + escapeRegExp(PROXY_BLOCK_START) + '[\\s\\S]*?' + escapeRegExp(PROXY_BLOCK_END) + '\\n?',
+    );
+    const stripped = text.replace(pattern, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    const next = [stripped, block].filter(Boolean).join('\n') + (stripped || block ? '\n' : '');
+    if (next === text) return;
+    fs.mkdirSync(path.dirname(ENV_FILE), { recursive: true });
+    fs.writeFileSync(ENV_FILE, next);
+    log(proxy ? 'wrote HTTPS_PROXY to ' + ENV_FILE : 'removed the Stitch proxy block from ' + ENV_FILE);
+  } catch (error) {
+    log('could not update ' + ENV_FILE + ': ' + (error?.message || String(error)));
   }
 }
 
-/** Round-trip through the relay so a bad credential becomes a readable status. */
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Ask the plugin manager to compose the MCP row again, so the new credential in
+ * config.json reaches its `headers`. This is the same live reconcile the Plugin
+ * Manager's toggle performs; it keeps the tools working without a restart.
+ */
+async function reloadRow(ctx) {
+  const manager = safeGet(ctx, 'pluginManager');
+  if (!manager || typeof manager.reload !== 'function') {
+    return { reloaded: false, reason: 'plugin manager unavailable' };
+  }
+  try {
+    const result = await manager.reload([MCP_ENTRY_ID]);
+    if (result && result.restartReason) {
+      return { reloaded: false, reason: result.restartReason };
+    }
+    log('reloaded MCP entry ' + MCP_ENTRY_ID + ' to apply the new credential');
+    return { reloaded: true };
+  } catch (error) {
+    return { reloaded: false, reason: error?.message || String(error) };
+  }
+}
+
+/**
+ * Round-trip the endpoint the same way the MCP transport will — through the
+ * harness's own outbound policy — so `status.json` can say whether the network
+ * path, not just the credential, is in place.
+ */
 async function probe(config) {
-  const endpoint = `http://127.0.0.1:${RELAY_PORT}/mcp`;
-  const headers = { 'content-type': 'application/json', accept: 'application/json' };
-  const post = async (body) => {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20_000),
-    });
-    return { status: res.status, text: await res.text() };
-  };
+  const credential = config.accessToken ? 'access-token' : config.apiKey ? 'api-key' : null;
   const base = {
-    credential: config.accessToken ? 'access-token' : config.apiKey ? 'api-key' : null,
+    endpoint: ENDPOINT,
+    credential,
     proxy: config.proxy || null,
-    route: (await health())?.route ?? null,
     checkedAt: new Date().toISOString(),
   };
-  if (!base.credential) return { ok: false, ...base, error: 'no credential configured' };
+  const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+  if (config.accessToken) headers.Authorization = 'Bearer ' + config.accessToken;
+  else if (config.apiKey) headers['X-Goog-Api-Key'] = config.apiKey;
+  if (config.projectId) headers['X-Goog-User-Project'] = config.projectId;
+
   try {
-    await post({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: '2025-06-18',
-        capabilities: {},
-        clientInfo: { name: 'deepseek-harness', version: '1' },
-      },
+    const initialized = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'deepseek-harness', version: '1' },
+        },
+      }),
+      signal: AbortSignal.timeout(15_000),
     });
-    const listed = await post({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
-    const payload = JSON.parse(listed.text);
+    if (!initialized.ok) {
+      return { ok: false, ...base, reachable: false, error: 'HTTP ' + initialized.status };
+    }
+    const listed = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const payload = await listed.json().catch(() => null);
     const tools = payload?.result?.tools;
-    if (Array.isArray(tools)) return { ok: true, ...base, tools: tools.length };
-    return { ok: false, ...base, httpStatus: listed.status, error: listed.text.slice(0, 400) };
+    return {
+      ok: Array.isArray(tools),
+      ...base,
+      reachable: true,
+      tools: Array.isArray(tools) ? tools.length : undefined,
+      ...(Array.isArray(tools) ? {} : { error: 'unexpected tools/list response' }),
+    };
   } catch (error) {
-    return { ok: false, ...base, error: error?.cause?.code || error?.message || String(error) };
+    return {
+      ok: false,
+      ...base,
+      reachable: false,
+      error: error?.cause?.code || error?.message || String(error),
+    };
   }
 }
 
@@ -241,24 +298,49 @@ function writeStatus(status) {
 }
 
 /**
- * The MCP connection is created once, at activation. If the relay is late, dead or
- * holding a stale credential, recover it here so the tools do not stay broken
- * until the next restart.
+ * A credential saved in the card has to reach the MCP row without a restart, and a
+ * row that ran out of reconnect attempts has to come back by itself. Both are the
+ * same action: notice the change, then compose the entry again.
  */
 function keepAlive(ctx) {
-  const timer = setInterval(() => {
-    recover(ctx).catch(() => {});
-  }, 30_000);
-  if (typeof timer.unref === 'function') timer.unref();
-  ctx.effect(() => () => clearInterval(timer));
-}
-
-async function recover(ctx) {
-  const config = await resolveConfig(ctx);
-  const merged = { ...readJson(CONFIG_FILE), ...config };
-  writeConfig(merged);
-  await ensureRelay(merged);
-  writeStatus(await probe(merged));
+  let fingerprint = '';
+  let probing = false;
+  const tick = async () => {
+    if (probing) return;
+    probing = true;
+    try {
+      const config = await resolveConfig(ctx);
+      const next = JSON.stringify([
+        config.apiKey || '',
+        config.accessToken || '',
+        config.projectId || '',
+        config.proxy || '',
+      ]);
+      if (next === fingerprint) return;
+      const first = fingerprint === '';
+      fingerprint = next;
+      const changed = writeConfig(config);
+      writeProxyEnv(config);
+      if (first && !changed) return;
+      const status = await probe(config);
+      writeStatus({ ...status, reload: changed ? await reloadRow(ctx) : undefined });
+    } catch {
+      // A probe failure is recorded by the next round.
+    } finally {
+      probing = false;
+    }
+  };
+  // A card save must take effect while the user is looking at it, so the first
+  // minutes are polled closely and the interval relaxes afterwards.
+  const fast = setInterval(tick, 2_500);
+  const slow = setInterval(tick, 30_000);
+  for (const timer of [fast, slow]) {
+    if (typeof timer.unref === 'function') timer.unref();
+  }
+  ctx.effect(() => () => {
+    clearInterval(fast);
+    clearInterval(slow);
+  });
 }
 
 function readJson(file) {
@@ -274,5 +356,14 @@ function safeGet(ctx, name) {
     return typeof ctx.get === 'function' ? ctx.get(name) : undefined;
   } catch {
     return undefined;
+  }
+}
+
+function log(message) {
+  try {
+    fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+    fs.appendFileSync(LOG_FILE, '[' + new Date().toISOString() + '] ' + message + '\n');
+  } catch {
+    // Diagnostics only.
   }
 }

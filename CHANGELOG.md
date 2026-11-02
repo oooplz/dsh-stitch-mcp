@@ -4,6 +4,54 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-02
+
+The helper process is gone: the MCP row talks to Google itself, and the harness owns
+the network. This also fixes the fresh-machine failure of every earlier release.
+
+### Removed
+
+- `relay.js` and the `127.0.0.1:7788` hop. The plugin no longer listens on a port,
+  cannot leave a stale process behind, and no longer needs the old `scripts/`
+  launchers (also removed).
+- The plugin's own proxy routing and proxy discovery. DeepSeek Harness already installs
+  one outbound proxy policy per process (`HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY`, or
+  `$DSH_HOME/.env`) that covers every `fetch`, including the MCP transport.
+
+### Changed
+
+- The MCP row points at `https://stitch.googleapis.com/mcp` with the documented
+  `X-Goog-Api-Key` header. Direct is the default; a network without a proxy needs no
+  configuration.
+- The card's proxy switch now writes a managed `HTTPS_PROXY` block into
+  `$DSH_HOME/.env` (and removes it again when switched off), so the address takes
+  effect for the whole harness at the next launch.
+- The OAuth tab documents `gcloud auth print-access-token` instead of the removed
+  `stitch login` command.
+- `status.json` reports the endpoint, the resolved proxy, `reachable` and the error of
+  the last round trip, instead of a relay route.
+
+### Fixed
+
+- `mcp-client(stitch): server is disconnected` on a brand-new machine. The MCP client's
+  first request is a `server/discover` version probe, and a 5xx answer to it ends the
+  connection attempt for good — which is exactly what the old relay returned whenever
+  the endpoint (or a proxy, or a credential) was missing. Stitch answers the probe with
+  a JSON-RPC "method not supported" at HTTP 200, so the direct row falls back to the
+  classic handshake, connects, and lists the 16 tools even before a credential exists.
+- A saved credential applies without a restart: the Host half rewrites `config.json`
+  and asks the plugin manager to compose the MCP entry again, the same live path the
+  Plugin Manager's own toggle uses.
+- Versions before 0.6.0 pointed at an `@google/stitch` CLI that nothing installed, so a
+  fresh machine had no way to connect at all.
+
+### Upgrading from 0.5.x
+
+The 0.5.x relay is a detached process and is not stopped by installing 0.6.0. Nothing
+points at it any more, so it only idles — kill the `DeepSeek Harness.exe relay.js`
+process (or reboot) to get the port back. The MCP row is replaced by the upgrade, so the
+tools keep working either way.
+
 ## [0.5.0] - 2026-11-02
 
 The transport was rebuilt around the documented remote endpoint, and the proxy
@@ -76,6 +124,7 @@ became an option instead of a requirement.
   host `credentials` service.
 - Display metadata (locale title/description, icon).
 
+[0.6.0]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.4.6...v0.5.0
 [0.4.6]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.4.3...v0.4.6
 [0.4.3]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.4.2...v0.4.3
