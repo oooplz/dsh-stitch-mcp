@@ -72,7 +72,14 @@ window.__ModuleLoader__.load({
     };
 
     function AuthCard(props) {
-      const creds = props.remote && props.remote.credentials;
+      // Accessing an undeclared service property throws in Cordis, so `remote.credentials`
+      // is declared in the plugin's inject list and read defensively here.
+      let creds;
+      try {
+        creds = props.creds;
+      } catch (e) {
+        creds = undefined;
+      }
       const [mode, setMode] = React.useState('api-key');
       const [apiKey, setApiKey] = React.useState('');
       const [token, setToken] = React.useState('');
@@ -99,9 +106,9 @@ window.__ModuleLoader__.load({
         refresh();
       }, [refresh]);
 
-      // Always render the actionable card. A summary-only branch here is what made
-      // the bundle page show a single"未配置凭据" line with no input box.
-      const compact = props && props.view === 'summary';
+      // Always render the actionable card; `compact` only trims padding when the
+      // owner renders the same entry as a one-line summary.
+      const compact = Boolean(props && props.compact);
 
       const store = (ref, value, label) => {
         if (!creds || typeof creds.set !== 'function') {
@@ -311,53 +318,18 @@ window.__ModuleLoader__.load({
       );
     }
 
-    // A detail-page section renders only while that page is open, and the owner
-    // renders every registered section on every subject. The card is gated on the
-    // subject's package name; the fallback line is a temporary probe that reports
-    // the real subject shape so a mismatch can be diagnosed without DevTools.
-    function StitchDetailSection(props) {
-      const subject = props && props.subject;
-      const pkgName = subject && subject.pkg && subject.pkg.name;
-      if (typeof pkgName === 'string' && pkgName.indexOf('stitch') >= 0) {
-        return h(
-          'section',
-          { 'data-stitch-credentials-section': true, style: { marginTop: 8 } },
-          h('div', { style: { fontWeight: 600, fontSize: 13, marginBottom: 8 } }, 'Stitch 凭据'),
-          h(AuthCard, { remote: props && props.remote, view: 'page' }),
-        );
-      }
-      return h(
-        'div',
-        { style: { fontSize: 11, opacity: 0.45, padding: '4px 0' } },
-        '[stitch-ui probe] kind=' + String(subject && subject.kind) + ' pkg=' + String(pkgName),
-      );
-    }
-
     return {
-      inject: ['slots', 'remote'],
+      // `remote.credentials` must be declared: Cordis throws
+      // "cannot get property ... without inject" on undeclared service access.
+      inject: ['slots', 'remote', 'remote.credentials'],
       apply(ctx) {
-        const remote = ctx.remote;
+        const creds = ctx.remote.credentials;
 
-        ctx.slots.inject('plugins.detail.section', () =>
-          ctx.slots.register(
-            { name: 'plugins.detail.section', id: 'stitch-credentials', order: 10, label: 'Stitch 凭据' },
-            (props) => h(StitchDetailSection, { subject: props && props.subject, remote }),
-          ),
-        );
-
-        // Kept for builds that do dispatch a bundle configuration form.
+        // The bundle's own configuration area, rendered between the bundle
+        // description and its component rows. Keyed by the bundle package name.
         ctx.slots.inject('plugins.bundle.config', () =>
           ctx.slots.register({ name: 'plugins.bundle.config', key: NS }, (props) =>
-            h(AuthCard, { remote, view: props && props.view }),
-          ),
-        );
-
-        // Visibility probe: a tiny marker in the detail header. Seeing it proves the
-        // Client half loaded and this page's slots reach us; not seeing it means the
-        // Client half is not loading at all.
-        ctx.slots.inject('plugins.detail.badge', () =>
-          ctx.slots.register({ name: 'plugins.detail.badge', id: 'stitch-loaded', order: 5 }, () =>
-            h('span', { style: { fontSize: 11, opacity: 0.5, marginLeft: 6 } }, 'stitch-ui'),
+            h(AuthCard, { creds, compact: props && props.view === 'summary' }),
           ),
         );
       },
