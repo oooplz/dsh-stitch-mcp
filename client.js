@@ -1,10 +1,10 @@
 window.__ModuleLoader__.load({
-  id: '@local/dsh-stitch-mcp',
+  id: 'dsh-stitch-mcp',
   factory(require) {
     const React = require('react');
     const h = React.createElement;
 
-    const NS = '@local/dsh-stitch-mcp';
+    const NS = 'dsh-stitch-mcp';
 
     // Credential references, resolved by the Host `credentials` service. The Host
     // half reads them at activation and republishes them into process.env so the

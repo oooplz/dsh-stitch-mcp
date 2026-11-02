@@ -20,7 +20,7 @@ plus an in-panel guide for choosing between **API Key** and **OAuth** credential
 ## Install
 
 ```bash
-dsh plugin --profile web add github:oooplz/dsh-stitch-mcp
+dsh plugin --profile web add dsh-stitch-mcp
 ```
 
 Use your own profile name instead of `web` if you launch the harness with another one

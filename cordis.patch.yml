@@ -9,7 +9,7 @@
 - insert:
     # Bundle's own Host entry; it mounts the Client half (the auth guide card).
     - id: dsh-stitch-mcp
-      name: '@local/dsh-stitch-mcp'
+      name: 'dsh-stitch-mcp'
       config: {}
     - id: stitch-mcp
       name: '@deepseek-ai/dsh-mcp-client'

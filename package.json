@@ -1,7 +1,7 @@
 {
-  "name": "@local/dsh-stitch-mcp",
-  "version": "1.3.0",
-  "description": "Google Stitch as native mcp__stitch__* tools in DeepSeek Harness, with a credential card for the API Key and OAuth access token.",
+  "name": "dsh-stitch-mcp",
+  "version": "1.4.0",
+  "description": "Google Stitch as native mcp__stitch__* tools in DeepSeek Harness, with an in-panel credential card for the API Key and OAuth access token.",
   "type": "module",
   "keywords": [
     "dsh",
@@ -12,6 +12,19 @@
     "ui-design"
   ],
   "license": "MIT",
+  "author": "yangjiacheng",
+  "homepage": "https://github.com/oooplz/dsh-stitch-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oooplz/dsh-stitch-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/oooplz/dsh-stitch-mcp/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
