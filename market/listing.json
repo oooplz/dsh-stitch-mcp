@@ -3,9 +3,9 @@
   "type": "bundle",
   "name": "Google Stitch MCP",
   "repo": "oooplz/dsh-stitch-mcp",
-  "spec": "dsh-stitch-mcp@0.4.3",
+  "spec": "dsh-stitch-mcp@0.4.4",
   "package": "dsh-stitch-mcp",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Google Stitch as native mcp__stitch__* tools in DeepSeek Harness, with an in-panel credential card for the API Key and OAuth access token.",
   "longDescription": "Attaches the official `@google/stitch` CLI to DeepSeek Harness as a stdio MCP server, so the agent can call Stitch directly:\n\n- `stitch_find` / `stitch_get` — list and read projects, screens and design systems\n- `stitch_create` / `stitch_edit` / `stitch_delete` — create and modify Canvas resources\n- `stitch_generate` — start backend generation jobs for screens and variants\n- `stitch_url` — canonical Stitch Canvas web URL for a project or screen\n\nThe plugin page adds a credential card with two tabs. **API Key** opens the Stitch settings page and stores the key through the Host `credentials` service (write-only, never read back). **OAuth** explains the CLI login flow and can copy the exact command.\n\nRequirements: the `@google/stitch` runtime is installed once under `~/.dsh/dsh-runtimes/stitch-mcp`, and the CLI is launched with the Host's own Node (>= 20).",
   "tags": [
