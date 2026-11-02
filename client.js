@@ -12,7 +12,8 @@ window.__ModuleLoader__.load({
     const REF_KEY = 'STITCH_API_KEY';
     const REF_TOKEN = 'STITCH_ACCESS_TOKEN';
 
-    const STITCH_HOME = 'https://stitch.withgoogle.com';
+    // Where a user creates an API key and manages their Stitch account.
+    const STITCH_SETTINGS = 'https://stitch.withgoogle.com/settings';
 
     const s = {
       card: {
@@ -160,13 +161,31 @@ window.__ModuleLoader__.load({
         );
       };
 
-      const openBrowser = () => {
+      const openUrl = (url, okText) => {
         try {
-          const w = window.open(STITCH_HOME, '_blank', 'noopener');
-          if (!w) setMsg({ kind: 'err', text: '浏览器拦截了弹窗，请手动打开 ' + STITCH_HOME });
-          else setMsg({ kind: 'ok', text: '已在新标签打开 Stitch。' });
+          const w = window.open(url, '_blank', 'noopener');
+          if (!w) setMsg({ kind: 'err', text: '浏览器拦截了弹窗，请手动打开 ' + url });
+          else setMsg({ kind: 'ok', text: okText });
         } catch (e) {
           setMsg({ kind: 'err', text: '打开失败：' + ((e && e.message) || String(e)) });
+        }
+      };
+
+      const LOGIN_COMMAND =
+        'node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login';
+
+      const copyLogin = () => {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(LOGIN_COMMAND).then(
+              () => setMsg({ kind: 'ok', text: '登录命令已复制，粘贴到终端执行即可。' }),
+              () => setMsg({ kind: 'err', text: '剪贴板不可用，请手动复制命令。' }),
+            );
+          } else {
+            setMsg({ kind: 'err', text: '剪贴板不可用，请手动复制命令。' });
+          }
+        } catch (e) {
+          setMsg({ kind: 'err', text: (e && e.message) || String(e) });
         }
       };
 
@@ -183,6 +202,23 @@ window.__ModuleLoader__.load({
           'div',
           { style: s.hint },
           'Canvas 资源（项目 / 界面 / 设计系统）需要它；与 Google 登录是两套凭据。密钥只写不读，保存后界面上不会再显示。',
+        ),
+        h(
+          'div',
+          { style: s.row },
+          h(
+            'button',
+            {
+              type: 'button',
+              onClick: () =>
+                openUrl(
+                  STITCH_SETTINGS,
+                  '已打开 Stitch 设置页：在 API keys 里新建一个密钥，然后粘贴回上面的输入框。',
+                ),
+            },
+            '打开设置页创建 API Key',
+          ),
+          h('span', { style: s.hint }, 'Settings → API keys → 新建 → 复制'),
         ),
         h(
           'div',
@@ -236,12 +272,21 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { style: s.hint },
-          '点按钮在浏览器里完成 Google 授权；拿到 access token 后粘贴到下面保存。也可以先执行一次登录命令，CLI 会把令牌存在本地。',
+          'Google 登录必须由 CLI 完成：授权回调落在 CLI 在本机起的监听端口上，单开一个浏览器标签授权完成后拿不到 token（会回到首页）。请用下面的登录命令，浏览器会自动弹出并回调，CLI 把令牌存在本地。',
         ),
         h(
           'div',
           { style: s.row },
-          h('button', { type: 'button', onClick: openBrowser, style: s.btn(true) }, '打开浏览器授权'),
+          h('button', { type: 'button', onClick: copyLogin, style: s.btn(true) }, '复制登录命令'),
+          h(
+            'button',
+            {
+              type: 'button',
+              onClick: () => openUrl(STITCH_SETTINGS, '已打开 Stitch 设置页。'),
+              style: s.btn(false),
+            },
+            '打开 Stitch 设置页',
+          ),
         ),
         h(
           'div',
