@@ -9,6 +9,9 @@ window.__ModuleLoader__.load({
     const REF_TOKEN = 'STITCH_ACCESS_TOKEN';
     const REF_PROXY = 'STITCH_HTTPS_PROXY';
     const SETTINGS_URL = 'https://stitch.withgoogle.com/settings';
+    // Prefilled in the Proxy tab so nobody has to type a local proxy address; it is
+    // only stored once the user presses Save.
+    const DEFAULT_PROXY = 'http://127.0.0.1:7897';
     const LOGIN_COMMAND =
       'node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login';
 
@@ -190,7 +193,7 @@ window.__ModuleLoader__.load({
       const creds = props.creds;
       const t = props.t;
       const [tab, setTab] = React.useState('key');
-      const [values, setValues] = React.useState({ key: '', token: '', proxy: '' });
+      const [values, setValues] = React.useState({ key: '', token: '', proxy: DEFAULT_PROXY });
       const [state, setState] = React.useState({ key: false, token: false, proxy: false });
       const [busy, setBusy] = React.useState(null);
       const [msg, setMsg] = React.useState(null);
@@ -232,7 +235,7 @@ window.__ModuleLoader__.load({
             setBusy(null);
             if (res && res.ok === true) {
               setMsg({ kind: 'ok', text: t.saved });
-              setValues((prev) => ({ ...prev, [slot]: '' }));
+              setValues((prev) => ({ ...prev, [slot]: slot === 'proxy' ? DEFAULT_PROXY : '' }));
               describe();
             } else {
               setMsg({ kind: 'err', text: (res && res.error && res.error.message) || t.saveFailed });
