@@ -18,12 +18,12 @@ window.__ModuleLoader__.load({
       en: {
         apiKeyTab: 'API Key',
         oauthTab: 'OAuth',
-        proxyTab: 'Proxy',
+        proxyLabel: 'Proxy',
         pasteKey: 'Paste API Key',
         pasteToken: 'Paste AccessToken',
-        pasteProxy: 'Enter a local proxy, e.g. http://127.0.0.1:7897',
         replaceKey: 'Replace API Key',
         replaceToken: 'Replace AccessToken',
+        pasteProxy: 'Enter a local proxy, e.g. http://127.0.0.1:7897',
         createKey: 'Create API Key',
         copyCommand: 'Copy login command',
         openSettings: 'Open settings',
@@ -48,12 +48,12 @@ window.__ModuleLoader__.load({
       zh: {
         apiKeyTab: 'API Key',
         oauthTab: 'OAuth',
-        proxyTab: '代理',
+        proxyLabel: '代理',
         pasteKey: '粘贴 API Key',
         pasteToken: '粘贴 AccessToken',
-        pasteProxy: '请输入本机代理，如 http://127.0.0.1:7897',
         replaceKey: '替换 API Key',
         replaceToken: '替换 AccessToken',
+        pasteProxy: '请输入本机代理，如 http://127.0.0.1:7897',
         createKey: '创建 API Key',
         copyCommand: '复制登录命令',
         openSettings: '打开设置页',
@@ -179,6 +179,12 @@ window.__ModuleLoader__.load({
         whiteSpace: 'nowrap',
       },
       actions: { display: 'flex', alignItems: 'center', gap: 10, minHeight: 18 },
+      divider: {
+        height: 1,
+        background: 'var(--dsw-alias-border-l1)',
+        opacity: 0.6,
+      },
+      label: { fontSize: 12, fontWeight: 600, opacity: 0.9 },
       ok: { fontSize: 12, color: 'var(--dsw-alias-state-business-primary)' },
       err: { fontSize: 12, color: '#d14343' },
       foot: { fontSize: 11, opacity: 0.45 },
@@ -188,8 +194,8 @@ window.__ModuleLoader__.load({
       const creds = props.creds;
       const t = props.t;
       const [tab, setTab] = React.useState('key');
-      const [values, setValues] = React.useState({ key: '', token: '', proxy: '' });
-      const [state, setState] = React.useState({ key: false, token: false, proxy: false });
+      const [values, setValues] = React.useState({ key: '', oauth: '', proxy: '' });
+      const [state, setState] = React.useState({ key: false, oauth: false, proxy: false });
       const [busy, setBusy] = React.useState(null);
       const [msg, setMsg] = React.useState(null);
 
@@ -201,7 +207,7 @@ window.__ModuleLoader__.load({
             const v = res.value || {};
             setState({
               key: Boolean(v[REF_KEY] && v[REF_KEY].configured === true),
-              token: Boolean(v[REF_TOKEN] && v[REF_TOKEN].configured === true),
+              oauth: Boolean(v[REF_TOKEN] && v[REF_TOKEN].configured === true),
               proxy: Boolean(v[REF_PROXY] && v[REF_PROXY].configured === true),
             });
           },
@@ -223,7 +229,7 @@ window.__ModuleLoader__.load({
           setMsg({ kind: 'err', text: t.empty });
           return;
         }
-        setBusy(ref);
+        setBusy(slot);
         setMsg(null);
         creds.set(ref, value.trim()).then(
           (res) => {
@@ -245,7 +251,7 @@ window.__ModuleLoader__.load({
 
       const clear = (ref, slot) => {
         if (!creds || typeof creds.unset !== 'function') return;
-        setBusy(ref);
+        setBusy(slot);
         creds.unset(ref).then(
           (res) => {
             setBusy(null);
@@ -287,21 +293,51 @@ window.__ModuleLoader__.load({
         }
       };
 
-      const TABS = [
-        { id: 'key', label: t.apiKeyTab, ref: REF_KEY },
-        { id: 'oauth', label: t.oauthTab, ref: REF_TOKEN },
-        { id: 'proxy', label: t.proxyTab, ref: REF_PROXY },
-      ];
-      const current = TABS.find((x) => x.id === tab) || TABS[0];
-      const value = values[current.id];
-      const configured = state[current.id];
+      const statusDot = (on) =>
+        h('span', { style: s.status }, h('span', { style: s.dot(on) }), on ? t.configured : t.notSet);
 
-      const placeholder =
-        current.id === 'proxy'
-          ? t.pasteProxy
-          : configured
-            ? { key: t.replaceKey, oauth: t.replaceToken }[current.id]
-            : { key: t.pasteKey, oauth: t.pasteToken }[current.id];
+      const field = (opts) =>
+        h(
+          'div',
+          { style: s.row },
+          h('input', {
+            type: opts.secret ? 'password' : 'text',
+            autoComplete: 'off',
+            spellCheck: false,
+            'aria-label': opts.label,
+            placeholder: opts.placeholder,
+            value: opts.value,
+            onChange: (e) => setValues((prev) => ({ ...prev, [opts.slot]: e.target.value })),
+            onKeyDown: (e) => {
+              if (e.key === 'Enter') save(opts.ref, opts.slot, opts.value);
+            },
+            style: s.input,
+          }),
+          h(
+            'button',
+            {
+              type: 'button',
+              disabled: busy === opts.slot,
+              onClick: () => save(opts.ref, opts.slot, opts.value),
+              style: s.btn(true),
+            },
+            busy === opts.slot ? t.saving : t.save,
+          ),
+          opts.configured
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  disabled: busy === opts.slot,
+                  onClick: () => clear(opts.ref, opts.slot),
+                  style: s.btn(false),
+                },
+                t.clear,
+              )
+            : null,
+        );
+
+      const isKey = tab === 'key';
 
       return h(
         'div',
@@ -312,85 +348,76 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { style: s.tabs, role: 'tablist' },
-            TABS.map((item) =>
-              h(
-                'button',
-                {
-                  key: item.id,
-                  type: 'button',
-                  role: 'tab',
-                  'aria-selected': tab === item.id,
-                  style: s.tab(tab === item.id),
-                  onClick: () => {
-                    setTab(item.id);
-                    setMsg(null);
-                  },
+            h(
+              'button',
+              {
+                type: 'button',
+                role: 'tab',
+                'aria-selected': isKey,
+                style: s.tab(isKey),
+                onClick: () => {
+                  setTab('key');
+                  setMsg(null);
                 },
-                item.label,
-              ),
+              },
+              t.apiKeyTab,
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                role: 'tab',
+                'aria-selected': !isKey,
+                style: s.tab(!isKey),
+                onClick: () => {
+                  setTab('oauth');
+                  setMsg(null);
+                },
+              },
+              t.oauthTab,
             ),
           ),
-          h(
-            'span',
-            { style: s.status },
-            h('span', { style: s.dot(configured) }),
-            configured ? t.configured : t.notSet,
-          ),
+          statusDot(isKey ? state.key : state.oauth),
         ),
-        h(
-          'div',
-          { style: s.row },
-          h('input', {
-            type: current.id === 'proxy' ? 'text' : 'password',
-            autoComplete: 'off',
-            spellCheck: false,
-            'aria-label': current.label,
-            placeholder,
-            value,
-            onChange: (e) => setValues((prev) => ({ ...prev, [current.id]: e.target.value })),
-            onKeyDown: (e) => {
-              if (e.key === 'Enter') save(current.ref, current.id, value);
-            },
-            style: s.input,
-          }),
-          h(
-            'button',
-            {
-              type: 'button',
-              disabled: busy === current.ref,
-              onClick: () => save(current.ref, current.id, value),
-              style: s.btn(true),
-            },
-            busy === current.ref ? t.saving : t.save,
-          ),
-          configured
-            ? h(
-                'button',
-                {
-                  type: 'button',
-                  disabled: busy === current.ref,
-                  onClick: () => clear(current.ref, current.id),
-                  style: s.btn(false),
-                },
-                t.clear,
-              )
-            : null,
-        ),
+        field({
+          slot: isKey ? 'key' : 'oauth',
+          ref: isKey ? REF_KEY : REF_TOKEN,
+          label: isKey ? t.apiKeyTab : t.oauthTab,
+          secret: true,
+          placeholder: isKey
+            ? state.key
+              ? t.replaceKey
+              : t.pasteKey
+            : state.oauth
+              ? t.replaceToken
+              : t.pasteToken,
+          value: isKey ? values.key : values.oauth,
+          configured: isKey ? state.key : state.oauth,
+        }),
         h(
           'div',
           { style: s.actions },
-          current.id === 'key'
+          isKey
             ? h('button', { type: 'button', onClick: open, style: s.link }, t.createKey + ' \u2197')
-            : current.id === 'oauth'
-              ? h(
-                  React.Fragment,
-                  null,
-                  h('button', { type: 'button', onClick: copyCommand, style: s.link }, t.copyCommand),
-                  h('span', { style: { fontSize: 12, opacity: 0.25 } }, '\u00b7'),
-                  h('button', { type: 'button', onClick: open, style: s.link }, t.openSettings),
-                )
-              : null,
+            : h(
+                React.Fragment,
+                null,
+                h('button', { type: 'button', onClick: copyCommand, style: s.link }, t.copyCommand),
+                h('span', { style: { fontSize: 12, opacity: 0.25 } }, '\u00b7'),
+                h('button', { type: 'button', onClick: open, style: s.link }, t.openSettings),
+              ),
         ),
+        h('div', { style: s.divider }),
+        h('div', { style: s.row }, h('span', { style: s.label }, t.proxyLabel), statusDot(state.proxy)),
+        field({
+          slot: 'proxy',
+          ref: REF_PROXY,
+          label: t.proxyLabel,
+          secret: false,
+          placeholder: t.pasteProxy,
+          value: values.proxy,
+          configured: state.proxy,
+        }),
         msg ? h('div', { style: msg.kind === 'ok' ? s.ok : s.err }, msg.text) : null,
         h('div', { style: s.foot }, t.restart),
       );
