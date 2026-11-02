@@ -113,11 +113,11 @@ window.__ModuleLoader__.load({
 
       const store = (ref, value, label) => {
         if (!creds || typeof creds.set !== 'function') {
-          setMsg({ kind: 'err', text: '当前构建没有暴露 credentials 服务，无法保存。' });
+          setMsg({ kind: 'err', text: 'This build does not expose the credentials service, so the value cannot be saved.' });
           return;
         }
         if (!value || value.trim().length === 0) {
-          setMsg({ kind: 'err', text: '内容为空，未保存。' });
+          setMsg({ kind: 'err', text: 'The value is empty; nothing was saved.' });
           return;
         }
         setBusy(true);
@@ -126,12 +126,12 @@ window.__ModuleLoader__.load({
           (res) => {
             setBusy(false);
             if (res && res.ok === true) {
-              setMsg({ kind: 'ok', text: label + ' 已保存。重启 Harness 后生效。' });
+              setMsg({ kind: 'ok', text: label + ' saved. Restart the harness to apply.' });
               if (ref === REF_KEY) setApiKey('');
               else setToken('');
               refresh();
             } else {
-              setMsg({ kind: 'err', text: (res && res.error && res.error.message) || '保存失败。' });
+              setMsg({ kind: 'err', text: (res && res.error && res.error.message) || 'Save failed.' });
             }
           },
           (e) => {
@@ -149,8 +149,8 @@ window.__ModuleLoader__.load({
             setBusy(false);
             setMsg(
               res && res.ok === true
-                ? { kind: 'ok', text: label + ' 已清除。' }
-                : { kind: 'err', text: (res && res.error && res.error.message) || '清除失败。' },
+                ? { kind: 'ok', text: label + ' cleared.' }
+                : { kind: 'err', text: (res && res.error && res.error.message) || 'Clear failed.' },
             );
             refresh();
           },
@@ -164,10 +164,10 @@ window.__ModuleLoader__.load({
       const openUrl = (url, okText) => {
         try {
           const w = window.open(url, '_blank', 'noopener');
-          if (!w) setMsg({ kind: 'err', text: '浏览器拦截了弹窗，请手动打开 ' + url });
+          if (!w) setMsg({ kind: 'err', text: 'The browser blocked the popup; open it manually: ' + url });
           else setMsg({ kind: 'ok', text: okText });
         } catch (e) {
-          setMsg({ kind: 'err', text: '打开失败：' + ((e && e.message) || String(e)) });
+          setMsg({ kind: 'err', text: 'Could not open: ' + ((e && e.message) || String(e)) });
         }
       };
 
@@ -178,11 +178,11 @@ window.__ModuleLoader__.load({
         try {
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(LOGIN_COMMAND).then(
-              () => setMsg({ kind: 'ok', text: '登录命令已复制，粘贴到终端执行即可。' }),
-              () => setMsg({ kind: 'err', text: '剪贴板不可用，请手动复制命令。' }),
+              () => setMsg({ kind: 'ok', text: 'Login command copied. Paste it into a terminal.' }),
+              () => setMsg({ kind: 'err', text: 'Clipboard unavailable; copy the command manually.' }),
             );
           } else {
-            setMsg({ kind: 'err', text: '剪贴板不可用，请手动复制命令。' });
+            setMsg({ kind: 'err', text: 'Clipboard unavailable; copy the command manually.' });
           }
         } catch (e) {
           setMsg({ kind: 'err', text: (e && e.message) || String(e) });
@@ -196,21 +196,21 @@ window.__ModuleLoader__.load({
           'div',
           { style: { fontWeight: 600 } },
           'API Key',
-          h('span', { style: s.badge(state.key) }, state.key ? '已配置' : '未配置'),
+          h('span', { style: s.badge(state.key) }, state.key ? 'Configured' : 'Not configured'),
         ),
         h(
           'div',
           { style: s.hint },
-          'Canvas 资源（项目 / 界面 / 设计系统）需要它；与 Google 登录是两套凭据。',
+          'Required for Canvas resources (projects, screens, design systems); separate from your Google sign-in.',
         ),
         h(
           'div',
           { style: { ...s.hint, whiteSpace: 'pre-line' } },
-          '获取步骤（Stitch 设置页为英文界面）：\n' +
-            '1. 点下方按钮打开设置页\n' +
-            '2. 找到「API key」区块，点右侧「Create key」\n' +
-            '3. 复制生成的密钥（完整密钥只在创建时显示一次）\n' +
-            '4. 粘贴到下面的输入框并点「保存」',
+          'Steps (the Stitch settings page is in English):\n' +
+            '1. Open the settings page with the button below\n' +
+            '2. In the "API key" card, click "Create key" on the right\n' +
+            '3. Copy the generated key (it is shown in full only once)\n' +
+            '4. Paste it into the field below and press Save',
         ),
         h(
           'div',
@@ -222,10 +222,10 @@ window.__ModuleLoader__.load({
               onClick: () =>
                 openUrl(
                   STITCH_SETTINGS,
-                  '已打开 Stitch 设置页：在「API key」区块点「Create key」，复制后粘贴回上面的输入框。',
+                  'Opened the Stitch settings page: click "Create key" under the "API key" section, then paste the key above.',
                 ),
             },
-            '打开设置页创建 API Key',
+            'Open settings and create an API Key',
           ),
           h('span', { style: s.hint }, 'API key → Create key'),
         ),
@@ -235,7 +235,7 @@ window.__ModuleLoader__.load({
           h('input', {
             type: 'password',
             autoComplete: 'off',
-            placeholder: state.key ? '已保存；输入新值可覆盖' : '粘贴 API Key',
+            placeholder: state.key ? 'Saved; type a new value to replace it' : 'Paste your API Key',
             value: apiKey,
             onChange: (e) => setApiKey(e.target.value),
             onKeyDown: (e) => {
@@ -252,7 +252,7 @@ window.__ModuleLoader__.load({
               onClick: () => store(REF_KEY, apiKey, 'API Key'),
               style: s.btn(true),
             },
-            busy ? '保存中…' : '保存',
+            busy ? 'Saving…' : 'Save',
           ),
           state.key
             ? h(
@@ -263,7 +263,7 @@ window.__ModuleLoader__.load({
                   onClick: () => clear(REF_KEY, 'API Key'),
                   style: s.btn(false),
                 },
-                '清除',
+                'Clear',
               )
             : null,
         ),
@@ -276,25 +276,25 @@ window.__ModuleLoader__.load({
           'div',
           { style: { fontWeight: 600 } },
           'OAuth',
-          h('span', { style: s.badge(state.token) }, state.token ? '已配置' : '未配置'),
+          h('span', { style: s.badge(state.token) }, state.token ? 'Configured' : 'Not configured'),
         ),
         h(
           'div',
           { style: s.hint },
-          'Google 登录必须由 CLI 完成：授权回调落在 CLI 在本机起的监听端口上，单开一个浏览器标签授权完成后拿不到 token（会回到首页）。请用下面的登录命令，浏览器会自动弹出并回调，CLI 把令牌存在本地。',
+          'Google sign-in must run through the CLI: the authorization callback is delivered to a loopback port the CLI opens, so a plain browser tab finishes on the homepage without a token. Use the login command below; the browser opens and the callback lands, and the CLI stores the token locally.',
         ),
         h(
           'div',
           { style: s.row },
-          h('button', { type: 'button', onClick: copyLogin, style: s.btn(true) }, '复制登录命令'),
+          h('button', { type: 'button', onClick: copyLogin, style: s.btn(true) }, 'Copy login command'),
           h(
             'button',
             {
               type: 'button',
-              onClick: () => openUrl(STITCH_SETTINGS, '已打开 Stitch 设置页。'),
+              onClick: () => openUrl(STITCH_SETTINGS, 'Opened the Stitch settings page.'),
               style: s.btn(false),
             },
-            '打开 Stitch 设置页',
+            'Open Stitch settings',
           ),
         ),
         h(
@@ -303,7 +303,7 @@ window.__ModuleLoader__.load({
           h('input', {
             type: 'password',
             autoComplete: 'off',
-            placeholder: state.token ? '已保存；输入新值可覆盖' : '粘贴 STITCH_ACCESS_TOKEN',
+            placeholder: state.token ? 'Saved; type a new value to replace it' : 'Paste STITCH_ACCESS_TOKEN',
             value: token,
             onChange: (e) => setToken(e.target.value),
             onKeyDown: (e) => {
@@ -320,7 +320,7 @@ window.__ModuleLoader__.load({
               onClick: () => store(REF_TOKEN, token, 'Access Token'),
               style: s.btn(true),
             },
-            '保存',
+            'Save',
           ),
           state.token
             ? h(
@@ -331,7 +331,7 @@ window.__ModuleLoader__.load({
                   onClick: () => clear(REF_TOKEN, 'Access Token'),
                   style: s.btn(false),
                 },
-                '清除',
+                'Clear',
               )
             : null,
         ),
@@ -355,7 +355,7 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         { 'data-stitch-auth': true, style: compact ? { ...s.card, padding: '10px 12px', gap: 8 } : s.card },
-        h('div', { style: { fontWeight: 600 } }, 'Stitch 凭据'),
+        h('div', { style: { fontWeight: 600 } }, 'Stitch credentials'),
         h(
           'div',
           { style: s.tabs },
@@ -368,7 +368,7 @@ window.__ModuleLoader__.load({
         ),
         mode === 'api-key' ? apiKeyPane : oauthPane,
         msg ? h('div', { style: msg.kind === 'ok' ? s.ok : s.err, role: 'status' }, msg.text) : null,
-        h('div', { style: s.hint }, '改完凭据需要重启 Harness，MCP 进程才会带着新凭据重启。'),
+        h('div', { style: s.hint }, 'Restart the harness after changing credentials so the MCP process respawns with them.'),
       );
     }
 

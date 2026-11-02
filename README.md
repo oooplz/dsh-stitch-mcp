@@ -3,7 +3,8 @@
 Google **Stitch** as native `mcp__stitch__*` tools inside [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness),
 plus an in-panel guide for choosing between **API Key** and **OAuth** credentials.
 
-`@google/stitch` 官方 CLI 以 stdio 方式作为 MCP 服务器接入，与 `stitch mcp install` 注册给其他编辑器的入口完全一致。
+The official `@google/stitch` CLI is attached as an MCP server over stdio — the same entry
+point `stitch mcp install` registers with other editors.
 
 ## Tools
 
@@ -52,12 +53,15 @@ complete the prerequisites below.
 The plugin page (**Settings → Plugins → Google Stitch**) renders a **credential card** with two
 tabs:
 
-- **API Key** — paste the key and press 保存. It is stored through the Host `credentials`
-  service (`ctx.remote.credentials.set`) under the reference `STITCH_API_KEY`. The store is
-  write-only: the UI never reads the secret back, only whether it is configured.
-- **OAuth** — 打开浏览器授权 opens the Stitch site in a new tab; paste the resulting access
-  token to store it under `STITCH_ACCESS_TOKEN`. The card also shows the CLI login command,
-  which stores and refreshes OAuth tokens locally.
+- **API Key** — press *Open settings and create an API Key*, click **Create key** in the
+  **API key** card of the Stitch settings page, then paste the key and press **Save**. It is
+  stored through the Host `credentials` service (`ctx.remote.credentials.set`) under the
+  reference `STITCH_API_KEY`. The store is write-only: the UI never reads the secret back,
+  only whether it is configured.
+- **OAuth** — Google sign-in has to run through the CLI, because the authorization callback is
+  delivered to a loopback port the CLI opens; a plain browser tab ends on the homepage with no
+  token. Press *Copy login command*, run it in a terminal, and the CLI stores and refreshes the
+  token locally. A pasted access token is stored under `STITCH_ACCESS_TOKEN`.
 
 How it reaches the MCP server: the Host half (`index.js`) resolves those references at
 activation and republishes them into `process.env`; the `stitch-mcp` row's `!!js` expressions
@@ -110,11 +114,11 @@ It runs inside the Host process (no Node ≥ 20 needed) but requires a bearer to
 | File | Role |
 | :-- | :-- |
 | `cordis.patch.yml` | Inserts the Host entry and the `dsh-mcp-client` row |
-| `index.js` | Host half (no work; makes the bundle a Cordis plugin) |
-| `client.js` | Client half: the Auth guide card in `plugins.bundle.config` |
-| `locale/{en,zh}.json` | Plugin title and description |
+| `index.js` | Host half: republishes stored credentials into `process.env` |
+| `client.js` | Client half: the credential card in `plugins.bundle.config` |
+| `locale/en.json` | Plugin title and description |
 | `icon.svg` | Plugin icon |
-| `market/awesome-dsh-plugin.yml` | Catalog entry for the community market PR |
+| `market/listing.json` | DSH Plugin Market submission entry |
 
 ## License
 
