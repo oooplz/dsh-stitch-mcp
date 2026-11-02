@@ -30,3 +30,10 @@
         failOnStartupError: false
         # Large tool catalog and job-starting calls need more than the 60s default.
         toolCallTimeoutMs: 120000
+        # The relay is a child process, so it can be a moment late at startup or be
+        # replaced while running. Keep retrying instead of staying disconnected.
+        reconnect:
+          enabled: true
+          initialDelayMs: 300
+          maxDelayMs: 3000
+          maxAttempts: 200

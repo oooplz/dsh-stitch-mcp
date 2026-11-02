@@ -1,152 +1,148 @@
 /**
  * Host half.
  *
- * Stitch is a *remote* MCP endpoint that wants the API key in an `X-Goog-Api-Key`
- * header. Two facts shape this file:
+ * Stitch is a *remote* MCP endpoint: `streamable-http` to
+ * https://stitch.googleapis.com/mcp with an `X-Goog-Api-Key` (or an OAuth
+ * `Authorization: Bearer` plus `X-Goog-User-Project`) header. Two constraints
+ * decide how that is wired here:
  *
- * 1. The Streamable HTTP transport runs inside the Harness process, which only
- *    honours HTTPS_PROXY when NODE_USE_ENV_PROXY was set at its launch. A plugin
- *    cannot do that for its host.
+ * 1. The transport runs inside the Harness process, which only honours
+ *    HTTPS_PROXY when NODE_USE_ENV_PROXY was set at launch, and the transport has
+ *    no proxy option of its own. A plugin cannot change either.
  * 2. A `!!js` config expression may be evaluated before this plugin activates, so
- *    the MCP row must not depend on values written here.
+ *    the MCP row must not carry the credential itself.
  *
- * So this entry spawns `relay.js` — a child that has the proxy flag in its own
- * environment — waits until it listens, and the MCP row points at it on localhost.
- * The relay attaches the API key and does the proxying; the MCP client needs
- * neither.
+ * So this entry keeps one source of truth on disk — config.json in the runtime
+ * directory — starts relay.js (a child that owns the proxy flag and injects the
+ * credential headers), and points the MCP row at that relay on localhost.
+ *
+ * The credential is resolved from the credentials service, then from the
+ * credentials file on disk, then from the environment, then from the previous
+ * config.json, and the result is merged instead of overwritten: a plugin that
+ * activates before the credentials service is ready must not erase a working
+ * setup.
  */
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const RELAY_PORT = Number(process.env.STITCH_RELAY_PORT || 7788);
 const RELAY_SCRIPT = fileURLToPath(new URL('./relay.js', import.meta.url));
+const RELAY_PORT = Number(process.env.STITCH_RELAY_PORT || 7788);
 const RUNTIME_DIR = path.join(os.homedir(), '.dsh', 'dsh-runtimes', 'stitch-mcp');
-const ENV_FILE = path.join(RUNTIME_DIR, '.env');
+const CONFIG_FILE = path.join(RUNTIME_DIR, 'config.json');
+const LOG_FILE = path.join(RUNTIME_DIR, 'relay.log');
+const STATUS_FILE = path.join(RUNTIME_DIR, 'status.json');
+const CREDENTIALS_FILE = path.join(os.homedir(), '.dsh', '.credentials.yaml');
 
-const ENV_REFS = [
-  'STITCH_API_KEY',
-  'STITCH_ACCESS_TOKEN',
-  'STITCH_PROJECT_ID',
-  'STITCH_BASE_URL',
-];
+/** Credential reference name → key in config.json. */
+const FIELDS = {
+  STITCH_API_KEY: 'apiKey',
+  STITCH_ACCESS_TOKEN: 'accessToken',
+  STITCH_PROJECT_ID: 'projectId',
+  STITCH_HTTPS_PROXY: 'proxy',
+};
 
 export async function apply(ctx) {
-  const credentials = ctx.get('credentials');
-  const values = {};
-
-  if (credentials !== undefined) {
-    for (const name of ENV_REFS) {
-      const value = await read(credentials, name);
-      if (value !== undefined) {
-        process.env[name] = value;
-        values[name] = value;
-      }
-    }
-    const proxy = await read(credentials, 'STITCH_HTTPS_PROXY');
-    if (proxy !== undefined) {
-      process.env.HTTPS_PROXY = proxy;
-      process.env.HTTP_PROXY = proxy;
-      values.HTTPS_PROXY = proxy;
-      values.HTTP_PROXY = proxy;
-    }
-  }
-
-  writeEnvFile(values);
-  await ensureRelay();
-  writeStatus(await probe());
+  const config = await resolveConfig(ctx);
+  writeConfig(config);
+  await ensureRelay(config);
+  writeStatus(await probe(config));
   keepAlive(ctx);
 }
 
-/**
- * Round-trip through the relay so a broken credential or a missing proxy shows up
- * as a readable status file instead of silently absent tools.
- */
-async function probe() {
-  const endpoint = `http://127.0.0.1:${RELAY_PORT}/mcp`;
-  const headers = { 'content-type': 'application/json', accept: 'application/json' };
-  const post = async (body) => {
-    const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
-    return { status: res.status, text: await res.text() };
-  };
-  try {
-    await post({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'dsh', version: '1' } },
-    });
-    const listed = await post({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
-    const payload = JSON.parse(listed.text);
-    const tools = payload?.result?.tools;
-    if (Array.isArray(tools)) return { ok: true, tools: tools.length, checkedAt: new Date().toISOString() };
-    return { ok: false, httpStatus: listed.status, error: listed.text.slice(0, 400) };
-  } catch (error) {
-    return { ok: false, error: error?.cause?.code || String(error?.message || error) };
-  }
-}
+/** Credentials service → credentials file → environment → previous config. */
+async function resolveConfig(ctx) {
+  const previous = readJson(CONFIG_FILE);
+  const service = safeGet(ctx, 'credentials');
+  const stored = readCredentialsFile();
+  const resolved = {};
 
-function writeStatus(status) {
-  try {
-    fs.mkdirSync(RUNTIME_DIR, { recursive: true });
-    fs.writeFileSync(path.join(RUNTIME_DIR, 'status.json'), JSON.stringify(status, null, 2) + '\n');
-  } catch {
-    // Diagnostics only.
-  }
-}
-
-/**
- * The MCP connection is established once, at activation, so a relay that dies
- * later would leave the tools broken until the next restart. Re-check the port and
- * spawn it again instead.
- */
-function keepAlive(ctx) {
-  const timer = setInterval(() => {
-    ensureRelay()
-      .then((ready) => (ready ? probe().then(writeStatus) : undefined))
-      .catch(() => {});
-  }, 30_000);
-  if (typeof timer.unref === 'function') timer.unref();
-  ctx.effect(() => () => clearInterval(timer));
-}
-
-/** Mirror the resolved values into the relay's working directory. */
-function writeEnvFile(values) {
-  try {
-    const lines = Object.entries(values).map(([key, value]) => `${key}=${value}`);
-    if (lines.length === 0) {
-      fs.rmSync(ENV_FILE, { force: true });
-      return;
+  for (const [ref, key] of Object.entries(FIELDS)) {
+    const candidates = [
+      async () => (service ? await readService(service, ref) : undefined),
+      () => stored[ref],
+      () => process.env[ref],
+      () => previous[key],
+    ];
+    for (const candidate of candidates) {
+      try {
+        const value = await candidate();
+        if (typeof value === 'string' && value.trim() !== '') {
+          resolved[key] = value.trim();
+          break;
+        }
+      } catch {
+        // Fall through to the next source.
+      }
     }
-    fs.mkdirSync(path.dirname(ENV_FILE), { recursive: true });
-    fs.writeFileSync(ENV_FILE, lines.join('\n') + '\n', { mode: 0o600 });
+  }
+  return resolved;
+}
+
+async function readService(credentials, ref) {
+  const result = await credentials.resolve(ref);
+  return typeof result?.value === 'string' ? result.value : undefined;
+}
+
+/** The credentials store is a small YAML document with a flat `refs:` map. */
+function readCredentialsFile() {
+  try {
+    const text = fs.readFileSync(CREDENTIALS_FILE, 'utf8');
+    const lines = text.split(/\r?\n/);
+    const start = lines.findIndex((line) => /^refs:\s*$/.test(line));
+    if (start === -1) return {};
+    const refs = {};
+    for (const line of lines.slice(start + 1)) {
+      if (/^\S/.test(line)) break;
+      const match = line.match(/^\s{2}([A-Za-z0-9_.-]+):\s*(.*)$/);
+      if (!match) continue;
+      let value = match[2].trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      if (value !== '') refs[match[1]] = value;
+    }
+    return refs;
   } catch {
-    // A read-only home directory only costs the fallback path, never activation.
+    return {};
   }
 }
 
-/** Start the relay unless something already listens on the port. */
-async function ensureRelay() {
-  if (await canConnect(RELAY_PORT)) return true;
+function writeConfig(config) {
   try {
     fs.mkdirSync(RUNTIME_DIR, { recursive: true });
-    const log = fs.openSync(path.join(RUNTIME_DIR, 'relay.log'), 'a');
+    // Nothing resolved anywhere: keep whatever worked before rather than
+    // destroying it.
+    if (Object.keys(config).length === 0) return;
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+  } catch {
+    // A read-only home directory only costs the relay, never activation.
+  }
+}
+
+/** Start the relay unless it already answers on the port. */
+async function ensureRelay(config) {
+  if (await health()) return true;
+
+  try {
+    fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+    const log = fs.openSync(LOG_FILE, 'a');
     const child = spawn(process.execPath, [RELAY_SCRIPT], {
       cwd: RUNTIME_DIR,
       env: {
         ...process.env,
-        // The relay is a Node process of our own, so it can carry the flag the
-        // Harness host cannot.
+        // The relay follows the documented MCP request flow, so it can run as a
+        // plain Node script under the embedded runtime.
         ELECTRON_RUN_AS_NODE: '1',
-        NODE_USE_ENV_PROXY: '1',
         STITCH_RELAY_PORT: String(RELAY_PORT),
       },
       detached: true,
-      // Keep the relay's own diagnostics: a silent spawn is impossible to debug.
       stdio: ['ignore', log, log],
       windowsHide: true,
     });
@@ -154,34 +150,112 @@ async function ensureRelay() {
   } catch {
     return false;
   }
-  for (let i = 0; i < 60; i += 1) {
-    if (await canConnect(RELAY_PORT)) return true;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  return waitFor(() => health().then((value) => value !== undefined), 6000);
+}
+
+async function waitFor(predicate, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await predicate()) return true;
+    if (Date.now() > deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 150));
   }
-  return false;
 }
 
-function canConnect(port) {
-  return new Promise((resolve) => {
-    const socket = net.connect({ port, host: '127.0.0.1' });
-    const done = (ok) => {
-      socket.destroy();
-      resolve(ok);
-    };
-    socket.once('connect', () => done(true));
-    socket.once('error', () => done(false));
-    socket.setTimeout(500, () => done(false));
-  });
-}
-
-async function read(credentials, name) {
+async function health() {
   try {
-    const resolved = await credentials.resolve(name);
-    if (resolved !== undefined && typeof resolved.value === 'string' && resolved.value.length > 0) {
-      return resolved.value;
-    }
+    const res = await fetch(`http://127.0.0.1:${RELAY_PORT}/healthz`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!res.ok) return undefined;
+    return await res.json();
   } catch {
-    // An unresolvable reference simply keeps whatever is already in the environment.
+    return undefined;
   }
-  return undefined;
+}
+
+/** Round-trip through the relay so a bad credential becomes a readable status. */
+async function probe(config) {
+  const endpoint = `http://127.0.0.1:${RELAY_PORT}/mcp`;
+  const headers = { 'content-type': 'application/json', accept: 'application/json' };
+  const post = async (body) => {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
+    });
+    return { status: res.status, text: await res.text() };
+  };
+  const base = {
+    credential: config.accessToken ? 'access-token' : config.apiKey ? 'api-key' : null,
+    proxy: config.proxy || null,
+    checkedAt: new Date().toISOString(),
+  };
+  if (!base.credential) return { ok: false, ...base, error: 'no credential configured' };
+  try {
+    await post({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'deepseek-harness', version: '1' },
+      },
+    });
+    const listed = await post({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+    const payload = JSON.parse(listed.text);
+    const tools = payload?.result?.tools;
+    if (Array.isArray(tools)) return { ok: true, ...base, tools: tools.length };
+    return { ok: false, ...base, httpStatus: listed.status, error: listed.text.slice(0, 400) };
+  } catch (error) {
+    return { ok: false, ...base, error: error?.cause?.code || error?.message || String(error) };
+  }
+}
+
+function writeStatus(status) {
+  try {
+    fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+    fs.writeFileSync(STATUS_FILE, JSON.stringify(status, null, 2) + '\n');
+  } catch {
+    // Diagnostics only.
+  }
+}
+
+/**
+ * The MCP connection is created once, at activation. If the relay is late, dead or
+ * holding a stale credential, recover it here so the tools do not stay broken
+ * until the next restart.
+ */
+function keepAlive(ctx) {
+  const timer = setInterval(() => {
+    recover(ctx).catch(() => {});
+  }, 30_000);
+  if (typeof timer.unref === 'function') timer.unref();
+  ctx.effect(() => () => clearInterval(timer));
+}
+
+async function recover(ctx) {
+  const config = await resolveConfig(ctx);
+  const merged = { ...readJson(CONFIG_FILE), ...config };
+  writeConfig(merged);
+  await ensureRelay(merged);
+  writeStatus(await probe(merged));
+}
+
+function readJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function safeGet(ctx, name) {
+  try {
+    return typeof ctx.get === 'function' ? ctx.get(name) : undefined;
+  } catch {
+    return undefined;
+  }
 }

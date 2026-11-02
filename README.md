@@ -16,15 +16,15 @@ documents for MCP clients:
 
 ## Tools
 
+The endpoint exposes 16 tools; they register as `mcp__stitch__*`:
+
 | Tool | Purpose |
 | :-- | :-- |
-| `stitch_find` | List projects, screens or design systems |
-| `stitch_get` | Fetch one resource by id |
-| `stitch_create` | Create one resource |
-| `stitch_edit` | Partial update of one resource |
-| `stitch_delete` | Remove a project |
-| `stitch_generate` | Start a backend generation job (screens, variants) |
-| `stitch_url` | Canonical Stitch Canvas web URL for a project or screen |
+| `list_projects` / `get_project` / `create_project` / `delete_project` | Projects |
+| `list_screens` / `get_screen` / `download_file` | Screens and their files |
+| `generate_screen_from_text` / `edit_screens` / `generate_variants` | Generate and edit UI |
+| `list_design_systems` / `create_design_system` / `create_design_system_from_design_md` / `update_design_system` / `apply_design_system` | Design systems |
+| `upload_design_md` | Upload a DESIGN.md |
 
 ## Install
 
@@ -34,49 +34,61 @@ dsh plugin --profile web add dsh-stitch-mcp
 
 Use your own profile name when the harness is launched with another one.
 
-## API key
+## Credentials
 
-Settings → Plugins → **Google Stitch** → paste the key → **Save**, then restart the
-harness. The key is stored through the host `credentials` service (write-only: the
-card only ever shows whether it is configured) and reaches the MCP row as the
-`X-Goog-Api-Key` header.
+Settings → Plugins → **Google Stitch** → paste the key → **Save**. The widget has two
+tabs:
+
+- **API Key** — the documented shape, `X-Goog-Api-Key`.
+- **OAuth** — `Authorization: Bearer <access token>`, optionally pinned to a project
+  with `X-Goog-User-Project`.
+
+Each credential is stored through the host `credentials` service (write-only: the card
+only shows whether it is configured). The host half resolves it into
+`~/.dsh/dsh-runtimes/stitch-mcp/config.json`, which the relay re-reads on every
+request, so saving a new value takes effect immediately — no restart.
 
 Create a key at <https://stitch.withgoogle.com/settings> → **API key** → **Create key**.
 The full key is shown only once.
 
-## Outbound proxy
+## Proxy
 
-The HTTP transport runs **inside the harness process**, and Node's built-in `fetch`
-ignores `HTTPS_PROXY` unless `NODE_USE_ENV_PROXY=1` was present when that process
-started. A plugin cannot set that for its host, so launch the harness through the
-bundled script when `stitch.googleapis.com` is only reachable through a proxy:
+`stitch.googleapis.com` is not reachable directly on some networks, and the
+Streamable HTTP transport runs inside the harness process, which has no proxy
+option. The plugin therefore starts `relay.js` — a small child process that opens the
+proxy tunnel itself with a plain `CONNECT` request — and the MCP row points at
+`127.0.0.1:7788`.
 
-- `scripts/start-with-proxy.ps1` (PowerShell)
-- `scripts/start-with-proxy.cmd` (double-click / shortcut target)
+Nothing has to be launched specially: the proxy is configured in the same card
+(switch, IP, port) and stored next to the credential. The relay opens a tunnel only
+when a proxy is set; without one it connects directly.
 
-Both set `NODE_USE_ENV_PROXY=1`, `HTTPS_PROXY` and `HTTP_PROXY` before starting the
-application. Edit `PROXY` in the script if the proxy listens elsewhere.
+The host half checks the relay every 30s, restarts it when it is gone, and writes a
+round-trip result to `~/.dsh/dsh-runtimes/stitch-mcp/status.json`:
 
-The card's proxy fields are kept for reference and for a stdio fallback; on the HTTP
-transport the launcher is what takes effect.
+```json
+{ "ok": true, "credential": "api-key", "proxy": "http://127.0.0.1:7897", "tools": 16 }
+```
 
 ## Troubleshooting
 
 | Symptom | Cause |
 | :-- | :-- |
-| Tools missing from the tool list | The endpoint could not be reached; start through the proxy launcher |
-| `AUTH_REQUIRED` / `NOT_AUTHENTICATED` | The key did not reach the header; re-save it and restart |
-| `MISSING_CANVAS_CREDENTIALS` | No API key configured for Canvas resources |
+| `mcp-client(stitch): server is disconnected` | The relay could not reach the endpoint; read `status.json` and `relay.log` |
+| `ok: false, error: no credential configured` | Nothing saved in the card yet |
+| `UND_ERR_CONNECT_TIMEOUT` / `ETIMEDOUT` | The proxy is set but not running, or direct access is blocked |
+| Tools missing from the tool list | Check `status.json`; the MCP row reconnects on its own once the relay answers |
 
 ## Layout
 
 | File | Role |
 | :-- | :-- |
-| `cordis.patch.yml` | Inserts the host entry and the `dsh-mcp-client` row (HTTP transport) |
-| `index.js` | Host half: resolves stored credentials into the process environment |
+| `cordis.patch.yml` | Inserts the host entry and the `dsh-mcp-client` row (HTTP transport, reconnect) |
+| `index.js` | Host half: resolves credentials, keeps `config.json` and the relay alive, writes `status.json` |
+| `relay.js` | Local relay: proxy tunnel, credential headers, request forwarding |
 | `client.js` | Client half: the credential card in `plugins.bundle.config`, with `I18N` dictionaries |
 | `locale/{en,zh}.json` | Plugin title and description per locale |
-| `scripts/` | Proxy-aware launchers for the harness |
+| `scripts/` | Optional proxy-aware launchers, kept for other plugins that need the env flag |
 | `CHANGELOG.md` | Release history |
 | `market/listing.json` | DSH Plugin Market submission entry |
 
