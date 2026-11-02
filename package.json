@@ -1,6 +1,6 @@
 {
   "name": "dsh-stitch-mcp",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Google Stitch as native mcp__stitch__* tools in DeepSeek Harness, with an in-panel credential card for the API Key and OAuth access token.",
   "type": "module",
   "keywords": [
@@ -38,7 +38,8 @@
     "locale/*.json",
     "icon.svg",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "dsh": {
     "bundle": {

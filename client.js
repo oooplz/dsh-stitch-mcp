@@ -5,30 +5,109 @@ window.__ModuleLoader__.load({
     const h = React.createElement;
 
     const NS = 'dsh-stitch-mcp';
-
-    // Credential references, resolved by the Host `credentials` service. The Host
-    // half reads them at activation and republishes them into process.env so the
-    // MCP row's `!!js` expressions can hand them to the CLI.
     const REF_KEY = 'STITCH_API_KEY';
     const REF_TOKEN = 'STITCH_ACCESS_TOKEN';
+    const SETTINGS_URL = 'https://stitch.withgoogle.com/settings';
+    const LOGIN_COMMAND =
+      'node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login';
 
-    // Where a user creates an API key and manages their Stitch account.
-    const STITCH_SETTINGS = 'https://stitch.withgoogle.com/settings';
+    // UI copy. Kept next to the component because a client half cannot import
+    // modules; locale/*.json carries the plugin's meta title and description.
+    const I18N = {
+      en: {
+        title: 'Credentials',
+        apiKeyTab: 'API Key',
+        oauthTab: 'OAuth',
+        configured: 'configured',
+        missing: 'not set',
+        apiKeyHint: 'Canvas resources require an API key.',
+        createKey: 'Create key',
+        apiKeyPlaceholder: 'Paste API key',
+        replacePlaceholder: 'Replace key',
+        oauthHint: 'Sign-in runs through the CLI; it owns the callback.',
+        copyCommand: 'Copy login command',
+        openSettings: 'Settings',
+        tokenPlaceholder: 'Paste access token',
+        replaceToken: 'Replace access token',
+        save: 'Save',
+        saving: 'Saving',
+        clear: 'Clear',
+        restartNote: 'Restart the harness to apply.',
+        emptyRejected: 'Value is empty.',
+        noService: 'credentials service unavailable.',
+        saveFailed: 'Save failed.',
+        clearFailed: 'Clear failed.',
+        cleared: 'Cleared.',
+        saved: 'Saved.',
+        copied: 'Command copied.',
+        copyFailed: 'Clipboard unavailable.',
+        popupBlocked: 'Popup blocked: ',
+        openedSettings: 'Settings opened.',
+        openFailed: 'Could not open: ',
+      },
+      zh: {
+        title: '凭据',
+        apiKeyTab: 'API Key',
+        oauthTab: 'OAuth',
+        configured: '已配置',
+        missing: '未配置',
+        apiKeyHint: 'Canvas 资源需要 API Key。',
+        createKey: '创建 Key',
+        apiKeyPlaceholder: '粘贴 API Key',
+        replacePlaceholder: '替换 Key',
+        oauthHint: '登录由 CLI 完成，回调在它自己的本地端口。',
+        copyCommand: '复制登录命令',
+        openSettings: '设置页',
+        tokenPlaceholder: '粘贴 access token',
+        replaceToken: '替换 access token',
+        save: '保存',
+        saving: '保存中',
+        clear: '清除',
+        restartNote: '重启 Harness 生效。',
+        emptyRejected: '内容为空。',
+        noService: 'credentials 服务不可用。',
+        saveFailed: '保存失败。',
+        clearFailed: '清除失败。',
+        cleared: '已清除。',
+        saved: '已保存。',
+        copied: '命令已复制。',
+        copyFailed: '剪贴板不可用。',
+        popupBlocked: '弹窗被拦截：',
+        openedSettings: '已打开设置页。',
+        openFailed: '打开失败：',
+      },
+    };
+
+    const pickLocale = (ctx) => {
+      try {
+        const service = typeof ctx.get === 'function' ? ctx.get('locale') : undefined;
+        const active =
+          service && typeof service.getSnapshot === 'function' ? service.getSnapshot().active : null;
+        if (active === 'zh' || active === 'en') return active;
+      } catch (e) {
+        /* fall through to the browser language */
+      }
+      try {
+        return String(navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+      } catch (e) {
+        return 'en';
+      }
+    };
 
     const s = {
       card: {
         display: 'flex',
         flexDirection: 'column',
-        gap: 12,
-        padding: '14px 16px',
+        gap: 10,
+        padding: '12px 14px',
         border: '1px solid var(--dsw-alias-border-l1)',
         borderRadius: 10,
         fontSize: 13,
-        lineHeight: 1.5,
       },
-      tabs: { display: 'flex', gap: 6 },
+      head: { display: 'flex', alignItems: 'center', gap: 8 },
+      tabs: { display: 'flex', gap: 4 },
       tab: (active) => ({
-        padding: '5px 12px',
+        padding: '3px 10px',
         fontSize: 12,
         borderRadius: 999,
         cursor: 'pointer',
@@ -36,11 +115,11 @@ window.__ModuleLoader__.load({
         background: active ? 'var(--dsw-alias-state-business-primary)' : 'transparent',
         color: active ? '#fff' : 'inherit',
       }),
-      row: { display: 'flex', gap: 8, alignItems: 'center' },
+      row: { display: 'flex', gap: 6, alignItems: 'center' },
       input: {
         flex: 1,
         minWidth: 0,
-        padding: '6px 9px',
+        padding: '5px 8px',
         fontSize: 12,
         borderRadius: 6,
         border: '1px solid var(--dsw-alias-border-l1)',
@@ -48,7 +127,7 @@ window.__ModuleLoader__.load({
         color: 'inherit',
       },
       btn: (primary) => ({
-        padding: '5px 12px',
+        padding: '4px 10px',
         fontSize: 12,
         borderRadius: 6,
         cursor: 'pointer',
@@ -57,38 +136,30 @@ window.__ModuleLoader__.load({
         background: primary ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-bg-l2)',
         color: primary ? '#fff' : 'inherit',
       }),
-      hint: { fontSize: 12, opacity: 0.72 },
+      hint: { fontSize: 12, opacity: 0.65 },
       ok: { fontSize: 12, color: 'var(--dsw-alias-state-business-primary)' },
       err: { fontSize: 12, color: '#d14343' },
       badge: (on) => ({
-        display: 'inline-block',
-        padding: '1px 7px',
+        padding: '0 6px',
         borderRadius: 999,
         fontSize: 11,
-        marginLeft: 6,
-        background: on ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-bg-l2)',
+        background: on ? 'var(--dsw-alias-state-business-primary)' : 'transparent',
         color: on ? '#fff' : 'inherit',
         border: '1px solid var(--dsw-alias-border-l1)',
       }),
     };
 
-    function AuthCard(props) {
-      // Accessing an undeclared service property throws in Cordis, so `remote.credentials`
-      // is declared in the plugin's inject list and read defensively here.
-      let creds;
-      try {
-        creds = props.creds;
-      } catch (e) {
-        creds = undefined;
-      }
-      const [mode, setMode] = React.useState('api-key');
-      const [apiKey, setApiKey] = React.useState('');
-      const [token, setToken] = React.useState('');
+    function CredentialCard(props) {
+      const creds = props.creds;
+      const t = props.t;
+      const [tab, setTab] = React.useState('key');
+      const [keyValue, setKeyValue] = React.useState('');
+      const [tokenValue, setTokenValue] = React.useState('');
       const [state, setState] = React.useState({ key: false, token: false });
       const [busy, setBusy] = React.useState(false);
       const [msg, setMsg] = React.useState(null);
 
-      const refresh = React.useCallback(() => {
+      const describe = () => {
         if (!creds || typeof creds.describe !== 'function') return;
         creds.describe([REF_KEY, REF_TOKEN]).then(
           (res) => {
@@ -101,23 +172,20 @@ window.__ModuleLoader__.load({
           },
           () => {},
         );
-      }, [creds]);
+      };
 
       React.useEffect(() => {
-        refresh();
-      }, [refresh]);
+        describe();
+        return undefined;
+      }, [creds]);
 
-      // Always render the actionable card; `compact` only trims padding when the
-      // owner renders the same entry as a one-line summary.
-      const compact = Boolean(props && props.compact);
-
-      const store = (ref, value, label) => {
+      const save = (ref, value) => {
         if (!creds || typeof creds.set !== 'function') {
-          setMsg({ kind: 'err', text: 'This build does not expose the credentials service, so the value cannot be saved.' });
+          setMsg({ kind: 'err', text: t.noService });
           return;
         }
-        if (!value || value.trim().length === 0) {
-          setMsg({ kind: 'err', text: 'The value is empty; nothing was saved.' });
+        if (!value || !value.trim()) {
+          setMsg({ kind: 'err', text: t.emptyRejected });
           return;
         }
         setBusy(true);
@@ -126,264 +194,190 @@ window.__ModuleLoader__.load({
           (res) => {
             setBusy(false);
             if (res && res.ok === true) {
-              setMsg({ kind: 'ok', text: label + ' saved. Restart the harness to apply.' });
-              if (ref === REF_KEY) setApiKey('');
-              else setToken('');
-              refresh();
+              setMsg({ kind: 'ok', text: t.saved });
+              if (ref === REF_KEY) setKeyValue('');
+              else setTokenValue('');
+              describe();
             } else {
-              setMsg({ kind: 'err', text: (res && res.error && res.error.message) || 'Save failed.' });
+              setMsg({ kind: 'err', text: (res && res.error && res.error.message) || t.saveFailed });
             }
           },
           (e) => {
             setBusy(false);
-            setMsg({ kind: 'err', text: (e && e.message) || String(e) });
+            setMsg({ kind: 'err', text: (e && e.message) || t.saveFailed });
           },
         );
       };
 
-      const clear = (ref, label) => {
+      const clear = (ref) => {
         if (!creds || typeof creds.unset !== 'function') return;
         setBusy(true);
         creds.unset(ref).then(
           (res) => {
             setBusy(false);
-            setMsg(
-              res && res.ok === true
-                ? { kind: 'ok', text: label + ' cleared.' }
-                : { kind: 'err', text: (res && res.error && res.error.message) || 'Clear failed.' },
-            );
-            refresh();
+            if (res && res.ok === true) {
+              setMsg({ kind: 'ok', text: t.cleared });
+              setState((prev) => ({
+                key: ref === REF_KEY ? false : prev.key,
+                token: ref === REF_TOKEN ? false : prev.token,
+              }));
+            } else {
+              setMsg({ kind: 'err', text: (res && res.error && res.error.message) || t.clearFailed });
+            }
           },
           (e) => {
             setBusy(false);
-            setMsg({ kind: 'err', text: (e && e.message) || String(e) });
+            setMsg({ kind: 'err', text: (e && e.message) || t.clearFailed });
           },
         );
       };
 
-      const openUrl = (url, okText) => {
+      const open = (url, okText) => {
         try {
           const w = window.open(url, '_blank', 'noopener');
-          if (!w) setMsg({ kind: 'err', text: 'The browser blocked the popup; open it manually: ' + url });
-          else setMsg({ kind: 'ok', text: okText });
+          setMsg(w ? { kind: 'ok', text: okText } : { kind: 'err', text: t.popupBlocked + url });
         } catch (e) {
-          setMsg({ kind: 'err', text: 'Could not open: ' + ((e && e.message) || String(e)) });
+          setMsg({ kind: 'err', text: t.openFailed + ((e && e.message) || String(e)) });
         }
       };
 
-      const LOGIN_COMMAND =
-        'node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login';
-
-      const copyLogin = () => {
+      const copyCommand = () => {
         try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(LOGIN_COMMAND).then(
-              () => setMsg({ kind: 'ok', text: 'Login command copied. Paste it into a terminal.' }),
-              () => setMsg({ kind: 'err', text: 'Clipboard unavailable; copy the command manually.' }),
-            );
-          } else {
-            setMsg({ kind: 'err', text: 'Clipboard unavailable; copy the command manually.' });
+          if (!navigator.clipboard || !navigator.clipboard.writeText) {
+            setMsg({ kind: 'err', text: t.copyFailed });
+            return;
           }
+          navigator.clipboard.writeText(LOGIN_COMMAND).then(
+            () => setMsg({ kind: 'ok', text: t.copied }),
+            () => setMsg({ kind: 'err', text: t.copyFailed }),
+          );
         } catch (e) {
-          setMsg({ kind: 'err', text: (e && e.message) || String(e) });
+          setMsg({ kind: 'err', text: t.copyFailed });
         }
       };
 
-      const apiKeyPane = h(
-        'div',
-        { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
-        h(
-          'div',
-          { style: { fontWeight: 600 } },
-          'API Key',
-          h('span', { style: s.badge(state.key) }, state.key ? 'Configured' : 'Not configured'),
-        ),
-        h(
-          'div',
-          { style: s.hint },
-          'Required for Canvas resources (projects, screens, design systems); separate from your Google sign-in.',
-        ),
-        h(
-          'div',
-          { style: { ...s.hint, whiteSpace: 'pre-line' } },
-          'Steps (the Stitch settings page is in English):\n' +
-            '1. Open the settings page with the button below\n' +
-            '2. In the "API key" card, click "Create key" on the right\n' +
-            '3. Copy the generated key (it is shown in full only once)\n' +
-            '4. Paste it into the field below and press Save',
-        ),
-        h(
-          'div',
-          { style: s.row },
-          h(
-            'button',
-            {
-              type: 'button',
-              onClick: () =>
-                openUrl(
-                  STITCH_SETTINGS,
-                  'Opened the Stitch settings page: click "Create key" under the "API key" section, then paste the key above.',
-                ),
-            },
-            'Open settings and create an API Key',
-          ),
-          h('span', { style: s.hint }, 'API key → Create key'),
-        ),
+      const field = (ref, value, setValue, placeholder, configured) =>
         h(
           'div',
           { style: s.row },
           h('input', {
             type: 'password',
             autoComplete: 'off',
-            placeholder: state.key ? 'Saved; type a new value to replace it' : 'Paste your API Key',
-            value: apiKey,
-            onChange: (e) => setApiKey(e.target.value),
+            placeholder,
+            value,
+            onChange: (e) => setValue(e.target.value),
             onKeyDown: (e) => {
-              if (e.key === 'Enter') store(REF_KEY, apiKey, 'API Key');
+              if (e.key === 'Enter') save(ref, value);
             },
             style: s.input,
-            'aria-label': 'Stitch API Key',
           }),
           h(
             'button',
-            {
-              type: 'button',
-              disabled: busy,
-              onClick: () => store(REF_KEY, apiKey, 'API Key'),
-              style: s.btn(true),
-            },
-            busy ? 'Saving…' : 'Save',
+            { type: 'button', disabled: busy, onClick: () => save(ref, value), style: s.btn(true) },
+            busy ? t.saving : t.save,
           ),
-          state.key
+          configured
             ? h(
                 'button',
-                {
-                  type: 'button',
-                  disabled: busy,
-                  onClick: () => clear(REF_KEY, 'API Key'),
-                  style: s.btn(false),
-                },
-                'Clear',
+                { type: 'button', disabled: busy, onClick: () => clear(ref), style: s.btn(false) },
+                t.clear,
               )
             : null,
-        ),
-      );
+        );
 
-      const oauthPane = h(
-        'div',
-        { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
-        h(
-          'div',
-          { style: { fontWeight: 600 } },
-          'OAuth',
-          h('span', { style: s.badge(state.token) }, state.token ? 'Configured' : 'Not configured'),
-        ),
-        h(
-          'div',
-          { style: s.hint },
-          'Google sign-in must run through the CLI: the authorization callback is delivered to a loopback port the CLI opens, so a plain browser tab finishes on the homepage without a token. Use the login command below; the browser opens and the callback lands, and the CLI stores the token locally.',
-        ),
-        h(
-          'div',
-          { style: s.row },
-          h('button', { type: 'button', onClick: copyLogin, style: s.btn(true) }, 'Copy login command'),
-          h(
-            'button',
-            {
-              type: 'button',
-              onClick: () => openUrl(STITCH_SETTINGS, 'Opened the Stitch settings page.'),
-              style: s.btn(false),
-            },
-            'Open Stitch settings',
-          ),
-        ),
-        h(
-          'div',
-          { style: s.row },
-          h('input', {
-            type: 'password',
-            autoComplete: 'off',
-            placeholder: state.token ? 'Saved; type a new value to replace it' : 'Paste STITCH_ACCESS_TOKEN',
-            value: token,
-            onChange: (e) => setToken(e.target.value),
-            onKeyDown: (e) => {
-              if (e.key === 'Enter') store(REF_TOKEN, token, 'Access Token');
-            },
-            style: s.input,
-            'aria-label': 'Stitch access token',
-          }),
-          h(
-            'button',
-            {
-              type: 'button',
-              disabled: busy,
-              onClick: () => store(REF_TOKEN, token, 'Access Token'),
-              style: s.btn(true),
-            },
-            'Save',
-          ),
-          state.token
-            ? h(
-                'button',
-                {
-                  type: 'button',
-                  disabled: busy,
-                  onClick: () => clear(REF_TOKEN, 'Access Token'),
-                  style: s.btn(false),
-                },
-                'Clear',
-              )
-            : null,
-        ),
-        h(
-          'div',
-          {
-            style: {
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-              fontSize: 11,
-              padding: '7px 9px',
-              borderRadius: 6,
-              background: 'var(--dsw-alias-bg-l2)',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all',
-            },
-          },
-          'node "$HOME/.dsh/dsh-runtimes/stitch-mcp/node_modules/@google/stitch/dist/stitch.js" login',
-        ),
-      );
+      const status = (on) => h('span', { style: s.badge(on) }, on ? t.configured : t.missing);
 
       return h(
         'div',
-        { 'data-stitch-auth': true, style: compact ? { ...s.card, padding: '10px 12px', gap: 8 } : s.card },
-        h('div', { style: { fontWeight: 600 } }, 'Stitch credentials'),
+        { 'data-stitch-credentials': true, style: s.card },
         h(
           'div',
-          { style: s.tabs },
+          { style: s.head },
+          h('span', { style: { fontWeight: 600 } }, t.title),
           h(
-            'button',
-            { type: 'button', style: s.tab(mode === 'api-key'), onClick: () => setMode('api-key') },
-            'API Key',
+            'div',
+            { style: { ...s.tabs, marginLeft: 'auto' } },
+            h(
+              'button',
+              { type: 'button', style: s.tab(tab === 'key'), onClick: () => setTab('key') },
+              t.apiKeyTab,
+            ),
+            h(
+              'button',
+              { type: 'button', style: s.tab(tab === 'oauth'), onClick: () => setTab('oauth') },
+              t.oauthTab,
+            ),
           ),
-          h('button', { type: 'button', style: s.tab(mode === 'oauth'), onClick: () => setMode('oauth') }, 'OAuth'),
         ),
-        mode === 'api-key' ? apiKeyPane : oauthPane,
-        msg ? h('div', { style: msg.kind === 'ok' ? s.ok : s.err, role: 'status' }, msg.text) : null,
-        h('div', { style: s.hint }, 'Restart the harness after changing credentials so the MCP process respawns with them.'),
+        tab === 'key'
+          ? h(
+              'div',
+              { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+              h(
+                'div',
+                { style: s.row },
+                h('span', { style: s.hint }, t.apiKeyHint),
+                status(state.key),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    onClick: () => open(SETTINGS_URL, t.openedSettings),
+                    style: { ...s.btn(false), marginLeft: 'auto' },
+                  },
+                  t.createKey + ' \u2197',
+                ),
+              ),
+              field(
+                REF_KEY,
+                keyValue,
+                setKeyValue,
+                state.key ? t.replacePlaceholder : t.apiKeyPlaceholder,
+                state.key,
+              ),
+            )
+          : h(
+              'div',
+              { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+              h(
+                'div',
+                { style: s.row },
+                h('span', { style: s.hint }, t.oauthHint),
+                status(state.token),
+                h(
+                  'button',
+                  { type: 'button', onClick: copyCommand, style: { ...s.btn(false), marginLeft: 'auto' } },
+                  t.copyCommand,
+                ),
+                h(
+                  'button',
+                  { type: 'button', onClick: () => open(SETTINGS_URL, t.openedSettings), style: s.btn(false) },
+                  t.openSettings,
+                ),
+              ),
+              field(
+                REF_TOKEN,
+                tokenValue,
+                setTokenValue,
+                state.token ? t.replaceToken : t.tokenPlaceholder,
+                state.token,
+              ),
+            ),
+        msg ? h('div', { style: msg.kind === 'ok' ? s.ok : s.err }, msg.text) : null,
+        h('div', { style: s.hint }, t.restartNote),
       );
     }
 
     return {
-      // `remote.credentials` must be declared: Cordis throws
-      // "cannot get property ... without inject" on undeclared service access.
+      // `remote.credentials` must be declared: Cordis rejects undeclared service access.
       inject: ['slots', 'remote', 'remote.credentials'],
       apply(ctx) {
         const creds = ctx.remote.credentials;
+        const dict = I18N[pickLocale(ctx)] || I18N.en;
 
-        // The bundle's own configuration area, rendered between the bundle
-        // description and its component rows. Keyed by the bundle package name.
         ctx.slots.inject('plugins.bundle.config', () =>
-          ctx.slots.register({ name: 'plugins.bundle.config', key: NS }, (props) =>
-            h(AuthCard, { creds, compact: props && props.view === 'summary' }),
+          ctx.slots.register({ name: 'plugins.bundle.config', key: NS }, () =>
+            h(CredentialCard, { creds, t: dict }),
           ),
         );
       },

@@ -115,10 +115,18 @@ It runs inside the Host process (no Node ≥ 20 needed) but requires a bearer to
 | :-- | :-- |
 | `cordis.patch.yml` | Inserts the Host entry and the `dsh-mcp-client` row |
 | `index.js` | Host half: republishes stored credentials into `process.env` |
-| `client.js` | Client half: the credential card in `plugins.bundle.config` |
-| `locale/en.json` | Plugin title and description |
+| `client.js` | Client half: the credential card in `plugins.bundle.config`, with its `I18N` dictionaries |
+| `locale/{en,zh}.json` | Plugin title and description per locale |
 | `icon.svg` | Plugin icon |
+| `CHANGELOG.md` | Release history |
 | `market/listing.json` | DSH Plugin Market submission entry |
+
+## Internationalization
+
+`locale/{en,zh}.json` carries the plugin's meta title and description, which the plugin
+manager renders without activating the plugin. UI copy lives in the `I18N` table inside
+`client.js`, because a client half cannot import modules: it picks the language from the
+harness locale service (`ctx.get('locale')`) and falls back to `navigator.language`.
 
 ## License
 

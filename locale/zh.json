@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Google Stitch",
+    "description": "通过 MCP 接入 Google Stitch，在插件页内配置 API Key 或 OAuth 凭据。"
+  }
+}
