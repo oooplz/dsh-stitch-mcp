@@ -311,12 +311,37 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // A detail-page section only renders while that page is open, and the owner
+    // renders every registered section unconditionally — so this is the reliable
+    // place for the card. `plugins.bundle.config` is only dispatched when the host
+    // holds a configuration form for the bundle, which this bundle has none of.
+    function StitchDetailSection(props) {
+      const subject = props && props.subject;
+      const pkgName = subject && subject.pkg && subject.pkg.name;
+      if (pkgName !== NS) return null;
+      return h(
+        'section',
+        { 'data-stitch-credentials-section': true, style: { marginTop: 8 } },
+        h('div', { style: { fontWeight: 600, fontSize: 13, marginBottom: 8 } }, 'Stitch 凭据'),
+        h(AuthCard, { remote: props && props.remote, view: 'page' }),
+      );
+    }
+
     return {
       inject: ['slots', 'remote'],
       apply(ctx) {
         const remote = ctx.remote;
+
+        ctx.slots.inject('plugins.detail.section', () =>
+          ctx.slots.register(
+            { name: 'plugins.detail.section', id: 'stitch-credentials', order: 10, label: 'Stitch 凭据' },
+            (props) => h(StitchDetailSection, { subject: props && props.subject, remote }),
+          ),
+        );
+
+        // Kept for builds that do dispatch a bundle configuration form.
         ctx.slots.inject('plugins.bundle.config', () =>
-          ctx.slots.register({ name: 'plugins.bundle.config', key: NS, locale: NS }, (props) =>
+          ctx.slots.register({ name: 'plugins.bundle.config', key: NS }, (props) =>
             h(AuthCard, { remote, view: props && props.view }),
           ),
         );
