@@ -1,5 +1,7 @@
 # dsh-stitch-mcp
 
+English | [简体中文](README.zh.md)
+
 Google **Stitch** as native `mcp__stitch__*` tools inside [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness),
 with an in-panel card for the API key and an optional proxy.
 
