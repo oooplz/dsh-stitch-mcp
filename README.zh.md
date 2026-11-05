@@ -7,13 +7,21 @@
 Stitch 是一个**远程 MCP 端点**。本插件使用 Streamable HTTP 传输直接连接它，并通过 API Key 请求头认证——这正是 Google 为 MCP 客户端提供的接入方式：
 
 ```json
-{ "servers": { "stitch": {
-  "type": "http",
-  "url": "https://stitch.googleapis.com/mcp",
-  "headers": { "X-Goog-Api-Key": "AQ...." } } } }
+{
+  "servers": {
+    "stitch": {
+      "url": "https://stitch.googleapis.com/mcp",
+      "type": "http",
+      "headers": {
+        "Accept": "application/json",
+        "X-Goog-Api-Key": "YOUR-API-KEY"
+      }
+    }
+  }
+}
 ```
 
-没有辅助进程，没有本地端口，也没有启动脚本：这一行配置直接与 Google 通信，网络由 Harness 负责。
+没有辅助进程，没有本地端口，也没有启动脚本：插件把上面这条 MCP 行加入 Harness，凭据由卡片提供。
 
 ## 工具
 
@@ -33,7 +41,7 @@ Stitch 是一个**远程 MCP 端点**。本插件使用 Streamable HTTP 传输�
 dsh plugin --profile web add dsh-stitch-mcp@latest
 ```
 
-如果 Harness 使用其他 profile 启动，请换成你自己的 profile 名，并保留 `@latest`：Harness 会刻意收敛刚发布几分钟的版本（`minimumReleaseAge`），因此只写 `add dsh-stitch-mcp` 可能解析到旧版本，而不是当前版本。低于 0.6.0 的版本需要手动安装 Google `stitch` CLI，并且在新机器上会报 `server is disconnected`。
+如果 Harness 使用其他 profile 启动，请换成你自己的 profile 名。
 
 ## 凭据
 
@@ -44,7 +52,7 @@ dsh plugin --profile web add dsh-stitch-mcp@latest
 
 在 <https://stitch.withgoogle.com/settings> → **API key** → **Create key** 创建密钥。完整密钥只显示一次。OAuth 标签页接收 access token，例如 `gcloud auth print-access-token` 的输出。
 
-值通过宿主 `credentials` 服务存储（只写：卡片只显示是否已配置）。Host 半部分把它们解析到 `~/.dsh/dsh-runtimes/stitch-mcp/config.json`，MCP 行在组装 `headers` 时读取该文件。因此，在卡片中保存会触发这一条目的重新加载，新凭据**无需重启 Harness** 即可生效。
+值通过宿主 `credentials` 服务存储；Host 半部分把它们解析到 `~/.dsh/dsh-runtimes/stitch-mcp/config.json`，MCP 行在组装 `headers` 时读取该文件。因此，在卡片中保存会触发这一条目的重新加载，新凭据**无需重启 Harness** 即可生效。
 
 ## 端点与代理
 
@@ -52,9 +60,7 @@ dsh plugin --profile web add dsh-stitch-mcp@latest
 
 卡片上的 **Use a proxy** 开关是唯一开关。打开后存储 `http://<ip>:<port>`，并**仅**将本插件的 Stitch 请求经其路由：Harness 中的其他一切——模型 API、网页搜索、其他 MCP 服务器——都保持原有路由。变更会在几秒内于运行中的进程内生效，因此无需重启，也不会写入 `~/.dsh/.env`。
 
-关闭开关不存储任何内容，并将插件再次移出该路径：Stitch 随后直连，或者——当你自己为 Harness 导出了 `HTTPS_PROXY` / `ALL_PROXY` 时——遵循该策略。Harness 每个进程解析一个出站策略；开关关闭时，它掌管所有来源，包括这一个。
-
-从 0.6.0 升级会删除该版本写入 `~/.dsh/.env` 的托管 `HTTPS_PROXY` 块。已存储的代理地址会让开关保持打开。
+关闭开关不存储任何内容，并将插件再次移出该路径：Stitch 随后直连，或遵循你自己为 Harness 导出的代理策略。
 
 如果无法访问端点，不会伪造任何东西：MCP 行会报告其自身的传输错误，`~/.dsh/dsh-runtimes/stitch-mcp/status.json` 会说明哪里失败：
 
@@ -94,14 +100,6 @@ dsh plugin --profile web add dsh-stitch-mcp@latest
 | `locale/{en,zh}.json` | 各语言的插件标题和描述 |
 | `CHANGELOG.md` | 发布历史 |
 | `market/listing.json` | DSH 插件市场提交条目 |
-
-## 为什么凭据从文件读取
-
-配置表达式会在任何插件运行之前求值，因此该行无法向 `credentials` 服务索取密钥。它改为同步读取 `config.json`（`process.getBuiltinModule('fs')`），而 Host 半部分在卡片变更时写入该文件。这样请求头只保存在一处，保存后的重新加载使它立即生效。
-
-## 国际化
-
-`locale/{en,zh}.json` 保存插件管理器在未激活插件时渲染的标题和描述。UI 文案位于 `client.js` 内的 `I18N` 表中，因为客户端半部分无法导入模块：它读取 Harness 的 locale 服务（`ctx.get('locale')`），并回退到 `navigator.language`。
 
 ## 许可证
 

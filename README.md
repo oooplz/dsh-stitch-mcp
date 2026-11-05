@@ -6,18 +6,26 @@ Google **Stitch** as native `mcp__stitch__*` tools inside [DeepSeek Harness](htt
 with an in-panel card for the API key and an optional proxy.
 
 Stitch is a **remote MCP endpoint**. This plugin connects to it directly with the
-Streamable HTTP transport and authenticates with an API key header, which is the
-shape Google documents for MCP clients:
+Streamable HTTP transport and authenticates with an API key header, which is the shape
+Google documents for MCP clients:
 
 ```json
-{ "servers": { "stitch": {
-  "type": "http",
-  "url": "https://stitch.googleapis.com/mcp",
-  "headers": { "X-Goog-Api-Key": "AQ...." } } } }
+{
+  "servers": {
+    "stitch": {
+      "url": "https://stitch.googleapis.com/mcp",
+      "type": "http",
+      "headers": {
+        "Accept": "application/json",
+        "X-Goog-Api-Key": "YOUR-API-KEY"
+      }
+    }
+  }
+}
 ```
 
-There is no helper process, no local port and no launcher script: the row talks to
-Google, and the harness owns the network.
+There is no helper process, no local port and no launcher script: the plugin adds the row
+above to the harness and reads the credential from the card.
 
 ## Tools
 
@@ -37,11 +45,7 @@ The endpoint exposes 16 tools; they register as `mcp__stitch__*`:
 dsh plugin --profile web add dsh-stitch-mcp@latest
 ```
 
-Use your own profile name when the harness is launched with another one, and keep
-`@latest`: the harness deliberately holds back releases that are minutes old
-(`minimumReleaseAge`), so a bare `add dsh-stitch-mcp` can resolve to an older version
-that is not this one. Versions below 0.6.0 needed the Google `stitch` CLI installed
-by hand and reported `server is disconnected` on a fresh machine.
+Use your own profile name when the harness is launched with another one.
 
 ## Credentials
 
@@ -56,9 +60,8 @@ Create a key at <https://stitch.withgoogle.com/settings> → **API key** → **C
 The full key is shown only once. The OAuth tab takes an access token, e.g. the output of
 `gcloud auth print-access-token`.
 
-Values are stored through the host `credentials` service (write-only: the card only
-shows whether a value is configured). The Host half resolves them into
-`~/.dsh/dsh-runtimes/stitch-mcp/config.json`, which the MCP row reads when its
+Values are stored through the host `credentials` service; the Host half resolves them
+into `~/.dsh/dsh-runtimes/stitch-mcp/config.json`, which the MCP row reads when its
 `headers` are composed. Saving in the card therefore triggers a reload of that one
 entry, so the new credential applies **without restarting the harness**.
 
@@ -74,12 +77,7 @@ the route it already had. The change applies inside the running process within a
 seconds, so there is no restart, and nothing is written to `~/.dsh/.env`.
 
 Switching it off stores nothing and takes the plugin out of the path again: Stitch then
-connects directly, or — when you exported `HTTPS_PROXY` / `ALL_PROXY` for the harness
-yourself — whatever that policy says. The harness resolves one outbound policy per
-process; with the switch off it is in charge for every origin, this one included.
-
-Upgrading from 0.6.0 removes the managed `HTTPS_PROXY` block that release wrote into
-`~/.dsh/.env`. A stored proxy address keeps the switch on.
+connects directly, or follows the proxy policy you exported for the harness yourself.
 
 If nothing can reach the endpoint, nothing is faked: the MCP row reports its own
 transport error, and `~/.dsh/dsh-runtimes/stitch-mcp/status.json` says what failed:
@@ -120,21 +118,6 @@ A healthy one looks like:
 | `locale/{en,zh}.json` | Plugin title and description per locale |
 | `CHANGELOG.md` | Release history |
 | `market/listing.json` | DSH Plugin Market submission entry |
-
-## Why the credential is read from a file
-
-Config expressions are evaluated before any plugin runs, so the row cannot ask the
-`credentials` service for the key. It reads `config.json` synchronously instead
-(`process.getBuiltinModule('fs')`), and the Host half writes that file whenever the
-card changes. That keeps the header in one place, and the reload after a save is what
-makes it apply immediately.
-
-## Internationalization
-
-`locale/{en,zh}.json` carries the meta title and description the plugin manager
-renders without activating the plugin. UI copy lives in the `I18N` table inside
-`client.js`, because a client half cannot import modules: it reads the harness locale
-service (`ctx.get('locale')`) and falls back to `navigator.language`.
 
 ## License
 

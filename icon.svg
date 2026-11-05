@@ -1,7 +1,70 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Stitch design canvas">
-  <rect x="6" y="10" width="40" height="44" rx="6" fill="none" stroke="#5B5BD6" stroke-width="4"/>
-  <rect x="14" y="18" width="24" height="6" rx="3" fill="#5B5BD6" opacity="0.85"/>
-  <rect x="14" y="30" width="14" height="16" rx="3" fill="#5B5BD6" opacity="0.45"/>
-  <rect x="32" y="30" width="6" height="16" rx="3" fill="#5B5BD6" opacity="0.45"/>
-  <path d="M50 11l2.7 5.6 5.6 2.7-5.6 2.7L50 27.6l-2.7-5.6-5.6-2.7 5.6-2.7z" fill="#FFB020"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Google Stitch">
+  <title>Google Stitch</title>
+  <!--
+    The Stitch mark, redrawn as vector from the official app icon served by
+    stitch.withgoogle.com (https://www.gstatic.com/labs-code/stitch/favicon-512x512.png):
+    a dark tile with a dot grid, a soft aurora along the bottom edge, and a white stitched
+    capsule with two holes.
+
+    Only plain shapes and gradients are used — no filter, no mask, no blend mode — so the
+    aurora survives renderers that implement none of them. The vertical falloff is painted
+    with the tile colour over the hue band instead of masked with it.
+    Geometry is sampled from the 512 px source: capsule 76,184 → 434,328 (r=72), holes
+    r=18.5 at x=218.5 / 292, y=255.5; the falloff follows the source's own alpha profile.
+  -->
+  <defs>
+    <pattern id="stitch-grid" width="13" height="13" patternUnits="userSpaceOnUse">
+      <circle cx="6.5" cy="6.5" r="1.5" fill="#3a3a3a"/>
+    </pattern>
+    <linearGradient id="stitch-hue" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#61b5e7"/>
+      <stop offset="0.125" stop-color="#75cefd"/>
+      <stop offset="0.25" stop-color="#7fddff"/>
+      <stop offset="0.375" stop-color="#80c7f8"/>
+      <stop offset="0.5" stop-color="#7590ef"/>
+      <stop offset="0.625" stop-color="#6e72e3"/>
+      <stop offset="0.75" stop-color="#7076eb"/>
+      <stop offset="0.875" stop-color="#6c82f4"/>
+      <stop offset="1" stop-color="#6b92ff"/>
+    </linearGradient>
+    <linearGradient id="stitch-falloff" gradientUnits="userSpaceOnUse" x1="0" y1="200" x2="0" y2="512">
+      <stop offset="0" stop-color="#050505" stop-opacity="1"/>
+      <stop offset="0.32" stop-color="#050505" stop-opacity="0.98"/>
+      <stop offset="0.45" stop-color="#050505" stop-opacity="0.9"/>
+      <stop offset="0.58" stop-color="#050505" stop-opacity="0.76"/>
+      <stop offset="0.71" stop-color="#050505" stop-opacity="0.52"/>
+      <stop offset="0.83" stop-color="#050505" stop-opacity="0.3"/>
+      <stop offset="0.93" stop-color="#050505" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#050505" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="stitch-side-left">
+      <stop offset="0" stop-color="#7cc9e6" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#7cc9e6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="stitch-side-right">
+      <stop offset="0" stop-color="#6f8fe8" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#6f8fe8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="stitch-crest" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#bfeaf8" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#bfeaf8" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#bfeaf8" stop-opacity="0.06"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="#050505"/>
+  <rect width="512" height="512" fill="url(#stitch-grid)"/>
+
+  <!-- aurora: a hue band across the bottom, lifted at both ends by two soft ellipses -->
+  <ellipse cx="120" cy="470" rx="210" ry="170" fill="url(#stitch-side-left)"/>
+  <ellipse cx="430" cy="455" rx="220" ry="180" fill="url(#stitch-side-right)"/>
+  <rect x="0" y="200" width="512" height="312" fill="url(#stitch-hue)"/>
+  <!-- vertical falloff, painted with the tile colour so no mask is needed -->
+  <rect x="0" y="100" width="512" height="412" fill="url(#stitch-falloff)"/>
+
+  <rect x="0" y="484" width="512" height="28" fill="url(#stitch-crest)"/>
+
+  <rect x="76" y="184" width="358" height="144" rx="72" fill="#f1f3f4"/>
+  <circle cx="218.5" cy="255.5" r="18.5" fill="#050505"/>
+  <circle cx="292" cy="255.5" r="18.5" fill="#050505"/>
 </svg>

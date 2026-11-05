@@ -31,7 +31,7 @@ Host half  (index.js + proxy.js)
 | File | Role |
 | :-- | :-- |
 | `cordis.patch.yml` | Inserts the Host entry, then the `@deepseek-ai/dsh-mcp-client` row (`streamable-http`, credential headers, `reconnect`) |
-| `index.js` | Host half: resolves credentials, keeps `config.json` / `status.json` / `plugin.log`, installs the proxy wrapper, reloads the MCP row on a change |
+| `index.js` | Host half: resolves credentials, keeps `config.json` / `status.json` / `plugin.log`, installs the proxy wrapper, reloads the MCP row on a change, and publishes the masked credential on `/api/dsh-stitch-mcp/credential-mask` |
 | `proxy.js` | Per-origin dispatcher wrapper: routes the Stitch origin through the card's proxy and hands every other request to the dispatcher that was there before |
 | `client.js` | Client half: the credential card (API Key / OAuth tabs, proxy switch, `I18N` dictionaries) |
 | `locale/{en,zh}.json` | Plugin title and description shown before activation |
@@ -174,6 +174,21 @@ for `mcp__stitch__*`) — faster than asking the user what they can see.
 - **English everywhere** in source, comments, `README.md`, `CHANGELOG.md` and this file.
   UI copy lives in the `I18N` table in `client.js` (en/zh), because a client half cannot
   import modules; `locale/*.json` carries only title and description.
+- **The UI language comes from the harness `locale` service**, declared in `inject`. The
+  card registers the `I18N` table with `locale.register`, resolves copy through
+  `locale.bind` and repaints on `locale.subscribe`, so `navigator.language` is only the
+  last fallback. Reading the browser language first (or reading the service without
+  declaring it) renders the card in the OS language on an English UI.
+- **A credential is never printed.** The credentials service is write-only: `describe`
+  says whether a reference resolves, never what it holds. Two mask sources exist, in this
+  order: the mask of what this browser saved (`localStorage`, `dsh-stitch-mcp:masks:v1`),
+  then the Host route `/api/dsh-stitch-mcp/credential-mask`, which masks whatever
+  `config.json` currently holds (`index.js` → `maskSecret`, first three and last three
+  characters, six characters or fewer fully hidden). A mask is dropped when the reference
+  is cleared or its `source` changes. The card puts that mask **in the credential field**
+  (plain text, read-only, cleared for input on focus, **Save** idle while it stands there)
+  rather than beside the status dot, so the stored value sits where a value belongs. Never
+  add a route, a log line or a `status.json` field that returns the value itself.
 - UI copy is short and developer-facing — no tutorial sentences. Fonts and theme follow
   the harness; do not introduce custom typography.
 - The credential tab is always labelled **API Key**, never abbreviated.

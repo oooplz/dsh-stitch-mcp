@@ -42,6 +42,8 @@ import path from 'node:path';
 import { createStitchRouter } from './proxy.js';
 
 const ENDPOINT = 'https://stitch.googleapis.com/mcp';
+/** Route the card uses to read the masked form of a stored credential. */
+const MASK_ROUTE = '/api/dsh-stitch-mcp/credential-mask';
 const DSH_HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh');
 const RUNTIME_DIR = path.join(DSH_HOME, 'dsh-runtimes', 'stitch-mcp');
 const CONFIG_FILE = path.join(RUNTIME_DIR, 'config.json');
@@ -76,7 +78,80 @@ export async function apply(ctx) {
   ctx.effect(() => () => {
     void uninstallProxyRoute();
   });
+  registerMaskRoute(ctx);
   keepAlive(ctx);
+}
+
+/**
+ * Answer the card's only read-back question: what does the stored credential look like
+ * with its middle removed?
+ *
+ * The credentials service is write-only — `describe` reports existence, never the value —
+ * so a card cannot show the key it saved. This Host half already resolves the value into
+ * `config.json`, so it publishes three leading and three trailing characters of it and
+ * nothing else. The card falls back to its own memory when this route is unavailable
+ * (a host without a web server, for example).
+ *
+ * The handler reads the file per request rather than closing over `config`: {@link keepAlive}
+ * rewrites that file when the card saves, and a stale answer is worse than none.
+ *
+ * @param {import('cordis').Context} ctx - plugin context; `webServer` is optional.
+ */
+function registerMaskRoute(ctx) {
+  ctx.inject(['webServer'], (web) => {
+    const server = web && web.webServer;
+    if (!server || typeof server.register !== 'function') return;
+    let dispose;
+    try {
+      dispose = server.register({
+        kind: 'exact',
+        path: MASK_ROUTE,
+        handler: (_req, res) => {
+          const stored = readJson(CONFIG_FILE);
+          const body = JSON.stringify({
+            ok: true,
+            apiKey: maskSecret(stored.apiKey),
+            accessToken: maskSecret(stored.accessToken),
+          });
+          try {
+            res.setHeader('content-type', 'application/json; charset=utf-8');
+            res.setHeader('cache-control', 'no-store');
+            res.writeHead(200);
+            res.end(body);
+          } catch {
+            // The card simply keeps its own memory.
+          }
+        },
+      });
+    } catch (error) {
+      log('could not publish the credential mask route: ' + (error?.message || String(error)));
+      return;
+    }
+    ctx.effect(
+      () => () => {
+        try {
+          dispose();
+        } catch {
+          // Already gone.
+        }
+      },
+      'stitch-mcp: credential mask route',
+    );
+  });
+}
+
+/**
+ * Three leading and three trailing characters, with a fixed-width middle. Short values are
+ * fully hidden: `abc123` must not be readable from its own mask.
+ *
+ * @param {unknown} value - the stored credential.
+ * @returns {string | null} the mask, or null when nothing is stored.
+ */
+function maskSecret(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (text === '') return null;
+  if (text.length <= 6) return '\u2022\u2022\u2022\u2022\u2022\u2022';
+  return text.slice(0, 3) + '\u2022\u2022\u2022' + text.slice(-3);
 }
 
 /** Credentials service → credentials file → environment → previous config. */

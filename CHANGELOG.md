@@ -4,6 +4,41 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2026-11-05
+
+The card now follows the harness language and shows the credential it holds, masked; the
+plugin icon is the official Stitch mark.
+
+### Fixed
+
+- The credential card followed the **browser** language instead of the harness locale.
+  `pickLocale` read the `locale` service through `ctx.get('locale')` while `inject` never
+  declared it, and the fallback chain reached `navigator.language` — a Chinese-language OS
+  rendered the card in Chinese while the rest of an English UI was English. The card now
+  injects `locale`, registers its `I18N` dictionaries with it, and repaints on a language
+  switch; copy already on screen, including a status message, follows the switch with
+  everything else.
+
+### Added
+
+- A saved credential is shown masked (first three and last three characters) in the
+  credential field; the Host half publishes that mask on
+  `/api/dsh-stitch-mcp/credential-mask`, so a value stored before this release is masked
+  too. The credentials service itself stays write-only.
+- A Simplified Chinese README, `README.zh.md`, linked from the top of `README.md` and
+  shipped in the package.
+
+### Changed
+
+- The plugin icon is the official Google Stitch mark, redrawn as vector from the Stitch app
+  icon — plain shapes and gradients only, no filter, mask or blend mode, so it renders the
+  same in every storefront.
+- `README.md` / `README.zh.md` trimmed: the `@latest` install caveat and the 0.6.0
+  upgrade paragraph are gone, and the MCP client snippet is shown in full.
+- `market/listing.json` no longer says the card "only reports whether a value is
+  configured": the card shows a mask of the stored value, and the listing now says so.
+- Version metadata in `package.json` and `market/listing.json` is 0.6.3.
+
 ## [0.6.2] - 2026-11-02
 
 A metadata release: the market listing now describes the plugin that exists. The bundle,
@@ -176,6 +211,7 @@ became an option instead of a requirement.
   host `credentials` service.
 - Display metadata (locale title/description, icon).
 
+[0.6.3]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/oooplz/dsh-stitch-mcp/compare/v0.5.0...v0.6.0
